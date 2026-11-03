@@ -1,0 +1,10 @@
+data/
+artifacts/
+logs/
+__pycache__/
+*.pdf
+*.pyc
+sample_submission.csv
+prediction_mapping.csv
+schedule_visualization.ipynb
+.venv/
