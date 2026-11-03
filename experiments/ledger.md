@@ -35,3 +35,13 @@ Known limit: these choices were made looking at labels from all years, so OOF an
 ## Round 3 (registered 2026-11-03, before running)
 - R17 `ls_*` without `mf_*` and `lps_*`: R12 says those two groups add nothing, R11 says `ls_*` adds. Expected: same as R11 within noise, with fewer features.
 - Note: R11-R15 report dirty=true because src/blend3.py was untracked when they ran. No trainer imports it. The gate does not accept them; whatever goes forward is rerun from a clean commit.
+
+## Results R11-R16 (2026-11-03). All dirty=true (see note above): indicative, not yet accepted by the gate.
+- R11 `ls_*` added, XGBoost 3 seeds vs XR_ref (5 seeds): LOYO +0.00023, 6/8 years, forward +0.00035, 3/4 years. 2020 +0.00095 and 2022 -0.00006. Hypothesis holds if the clean rerun agrees.
+- R12 Drop `mf_*` and `lps_*` together: LOYO 0.00000, forward 0.00000, 59 vs 72 features. Simpler model preferred.
+- R13 eta 0.04, 800 rounds: LOYO +0.00008, forward +0.00005. Inside noise, rejected: more time for nothing measurable.
+- R14 ST-Net seeds 3-5: LOYO 0.99261 vs 0.99270, forward 0.99160 vs 0.99195. So 3-seed ST-Net ensembles differ by up to 0.00035. Six seeds pooled, forward: 0.99203.
+- Correction to R10: e24 s345 0.99160 is level with e12 s012 0.99157, so "e24 beats e12" is not established. Same-seed e12 s345 not run. The with-prices gain shrinks to +0.00035 to +0.0007, and most of it comes from 2020 (0.98986 vs 0.98666).
+- R15 ST-Net d=96, forward: 0.99132 vs 0.99195, 1/4 years. Rejected.
+- R16 Forward-nested blends: xgb+net 0.99329, xgb+cat+net 0.99334, adding LightGBM or the no-price net does not help. Weights flat over trees 0.6-0.8.
+- Follow-up (`src/pool_net.py`, weights not nested, picked from flat range): xgb_ref .7 + net 0.99338; xgb_sens .7 + net seeds012/345/6 seeds 0.99361/0.99355/0.9936. Net seed noise nearly vanishes in the blend, six seeds add nothing there.
