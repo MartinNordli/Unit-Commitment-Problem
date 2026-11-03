@@ -101,3 +101,10 @@ Notebook 2 from an empty directory, 4 cores, H100: 42.3 minutes, LP 39.2. XGBoos
 
 ## R24 (registered 2026-11-03, before running)
 Interpretation for the report (`submission/build/interp_final.py`). No model selection. Trained before 2022, measured on 2022, seed 0. Permutation importance for XGBoost, ST-Net and blend: each (case, unit) gets its week-long feature track from another random (case, unit), for single features and for six groups (market, calendar, unit identity, water state, LP schedule, LP sensitivity). Partial dependence for XGBoost on top features. Hypothesis: both models lean mainly on the LP schedule; the net loses more than the trees when market price features are shuffled, because it has the absolute columns. Sensitivity only, since shuffled inputs are not physically consistent.
+
+## Results R24 (2026-11-04)
+Unshuffled on 2022: XGBoost 0.9924, net 0.99096, blend 0.99268. Group loss, xgb/net/blend: LP schedule -0.238/-0.239/-0.216, LP sensitivity -0.018/-0.024/-0.016, unit -0.004/-0.082/-0.003, water state -0.002/-0.003/-0.001, market -0.0005/-0.0087/-0.0014, calendar -0.001/-0.001/-0.001. Hypothesis holds. Not predicted: the net loses 0.065 on `unit_index` alone, cause unknown.
+Adversarial AUC, train vs test, without calendar and unit columns: with absolute prices 0.953, without 0.921, LP columns only 0.869, absolute only 0.922. The first version with calendar columns was wrong (0.92, 0.68, 0.87, a superset below its subset), since alternating blocks let the classifier memorise dates.
+
+## Filenames and old GPU test (2026-11-04)
+The task PDF's text layer shows spaces, but the rendered names have underscores, so the notebooks are now `Short_notebook_1.ipynb` and `Short_notebook_2.ipynb`. Worst-case test without GPU: job 25904586, started under the old name, same content. Test on P100 16 GB: `slurm/nb1_p100.sh`, job 25906288, results in `logs/nb1_p100/`.
