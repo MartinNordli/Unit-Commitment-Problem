@@ -1,6 +1,6 @@
 # Handoff (written 2026-11-03 19:37, when allocation 25896375 ended)
 
-Read first: this file, `experiments/ledger.md` (R1-R17), the task PDFs in the repo root's data folder. Answer the user in Norwegian.
+Read first: this file, `experiments/ledger.md` (R1-R17), the three task PDFs in the repo root. Answer the user in Norwegian.
 
 ## Rules still in force
 - Group 197, member Martin Nordli Almenningen. Kaggle team name must contain [197]. Student id 562274 comes from the prior project: confirm with the user. Do not copy "g.93".
