@@ -62,3 +62,13 @@ Synthetic data was discussed and judged unlikely to raise the score in general: 
 - R20 Settle e12 vs e24 on the same seeds: `N9b_e12_s345`, `N9f2_e12_s345`, against N4b_s345, N4f2_s345. Expected: no clear winner.
 - R21 ST-Net without `mf_*` and `lps_*`: `N6_min`, `N6f_min` (`base,lp,ls`, e24, seeds 0,1,2). Expected level with R19 within net seed noise (up to 0.00035), and then preferred for simplicity.
 - Note: net seed noise is larger than the gate's 0.0001, so net choices are also judged by their effect in the blend.
+
+## Results round 4 (2026-11-03, commit 1d71092, dirty=false)
+- R18 `XR_ls` LOYO 0.99349 vs XR_ref 0.99326: +0.00023, 7/8 years, forward +0.00037. PASS. `XR_sens2` also passes (6/8) but adds nothing over `XR_ls` (LOYO 0.00000, forward -0.00003, 79 vs 66 features). `XR_ls` is the tree feature set.
+- R19 `ls_*` on ST-Net keeping `mf_*`, `lps_*`: `N5_ls` LOYO +0.00006, 4/8 years, forward +0.00017. FAIL.
+- R20 e24 beats e12 on both seed sets: LOYO 0.99270 and 0.99261 vs 0.99243 and 0.99235; forward 0.99195 and 0.99160 vs 0.99157 and 0.99149; blended LOYO about 0.9938 vs 0.9936. Settled: e24. The R10 correction stands for the forward view alone, but LOYO and same-seed comparison now agree.
+- R21 ST-Net `base,lp,ls`: `N6_min` LOYO 0.99334, +0.00064, 7/8 years, forward 0.99278, +0.00083, 4/4 years. PASS, and well beyond net seed noise (up to 0.00035). Larger than expected: removing `mf_*` and `lps_*` helps the net, unlike the trees.
+- Blend of `XR_ls` + `N6_min`, trees 0.6/0.7/0.8: forward 0.99379/0.99379/0.99373, LOYO 0.99404/0.994/0.99391. Flat, so the weight stays at the previously fixed 0.7. For comparison B2 had nested LOYO 0.99377. Weight not nested; picked from a flat range set before this round.
+
+## Final model for notebook 1 (fixed 2026-11-03)
+XGBoost `base,lp,ls` without absolute price columns, seeds 0,1,2, 300 rounds, eta 0.08 + ST-Net `base,lp,ls` with them, e24, d=64, seeds 0,1,2. Logit blend 0.7/0.3. Trained on 2015-2022.
