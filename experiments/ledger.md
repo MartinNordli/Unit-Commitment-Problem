@@ -75,3 +75,9 @@ XGBoost `base,lp,ls` without absolute price columns, seeds 0,1,2, 300 rounds, et
 
 ## R22 (registered 2026-11-03, before running)
 Stress test of the final blend (`submission/build/stress2.py`), same perturbations as R9, ST-Net now with absolute prices, e24, weight 0.7/0.3, 1 seed each. Hypothesis: `negative_cheapest` and `scale_*` get worse for the net than in R9 because it now sees absolute prices, and the blend inherits part of that. Sensitivity only, not a true score. Informs the hedge in notebook 2.
+
+## Results R22 (2026-11-03)
+Final blend, change in AUC on perturbed 2022 inputs: scale_0.5 -0.00007, scale_2 +0.00052, scale_4 -0.00231, price_noise -0.00754, negative_cheapest -0.00722. R9 had -0.00259, -0.00775 and -0.00716 for the last three (scale_4, price_noise, negative_cheapest). Hypothesis mostly rejected: the blend did not get worse. The net alone is worse on scale_4 (-0.00400) but better than trees on negative_cheapest (-0.00618 vs -0.00792). On negative_cheapest p(on) falls from 0.137 to 0.008.
+
+## Notebook 1 clean run (2026-11-03)
+From an empty directory, 4 cores, H100: 50.6 minutes, LP 47.6. All LP schedules identical to the research artifacts. XGBoost logits identical. ST-Net logits max difference 0.125, Spearman 0.99999, because GPU training is not bit-exact. Peak about 11 GB RAM, about 4 GB GPU (sampled every 15 s). float16 and CPU paths tested on random data at real shapes; CPU estimate 4-5 hours in total. Not run on a smaller GPU.
