@@ -45,3 +45,8 @@ Known limit: these choices were made looking at labels from all years, so OOF an
 - R15 ST-Net d=96, forward: 0.99132 vs 0.99195, 1/4 years. Rejected.
 - R16 Forward-nested blends: xgb+net 0.99329, xgb+cat+net 0.99334, adding LightGBM or the no-price net does not help. Weights flat over trees 0.6-0.8.
 - Follow-up (`src/pool_net.py`, weights not nested, picked from flat range): xgb_ref .7 + net 0.99338; xgb_sens .7 + net seeds012/345/6 seeds 0.99361/0.99355/0.9936. Net seed noise nearly vanishes in the blend, six seeds add nothing there.
+
+## Results R17 and clean R11 forward (2026-11-03, commit 11585b1, dirty=false)
+- R17 `XR_ls_f` (`base,lp,ls`, 66 features): forward 0.99341, +0.00037 vs XR_ref_f, 3/4 years (2021 -0.00003). Hypothesis holds: same as R11 within noise with fewer features.
+- R11 clean rerun `XR_sens_f2`: 0.99338, identical per year to the dirty run, so the dirty flag changed nothing and GPU XGBoost reproduces exactly with the same seeds.
+- LOYO from clean code still to run for both before the gate can pass them.
