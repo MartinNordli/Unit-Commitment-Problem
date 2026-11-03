@@ -15,11 +15,11 @@ Read first: this file, `experiments/ledger.md` (R1-R17), the three task PDFs in 
 
 ## Where things stand (updated 2026-11-03 21:50)
 - Round 4 is done, see the ledger. Final model: XGBoost `base,lp,ls` + ST-Net `base,lp,ls` e24, logit blend 0.7/0.3. Forward 0.99379, LOYO 0.994.
-- Notebook 1 is done and verified from an empty directory: `submission/Short notebook 1.ipynb`, `submission/requirements.txt`, output `artifacts/submission_1.csv`. Built from `submission/build/nb1.py` with `mknb.py`; `run_clean.sh` does the clean run. Trees reproduce the research run exactly, the net to Spearman 0.99999 (GPU training is not bit-exact).
+- Notebook 1 is done and verified from an empty directory: `submission/Short_notebook_1.ipynb`, `submission/requirements.txt`, output `artifacts/submission_1.csv`. Built from `submission/build/nb1.py` with `mknb.py`; `run_clean.sh` does the clean run. Trees reproduce the research run exactly, the net to Spearman 0.99999 (GPU training is not bit-exact).
 - `artifacts/submission_1.csv` is on Kaggle: public LB 0.99638, the best so far (B2 0.99626). Notebook 1 repeats the best Kaggle score.
 
 ## Next steps, in order
-1. Notebook 2 is done: same blend, ST-Net without absolute price columns (R23), `submission/Short notebook 2.ipynb`, output `artifacts/submission_2.csv`, public LB 0.99635. Worst-case test without GPU, 4 cores, 32 GB: `slurm/nb1_cpu.sh`, results in `logs/nb1_cpu/`; update both notebook headers with the measured figures.
+1. Notebook 2 is done: same blend, ST-Net without absolute price columns (R23), `submission/Short_notebook_2.ipynb`, output `artifacts/submission_2.csv`, public LB 0.99635. Worst-case test without GPU, 4 cores, 32 GB: `slurm/nb1_cpu.sh`, results in `logs/nb1_cpu/`; update both notebook headers with the measured figures.
 2. Report: EDA (>=4 of the listed kinds), >=2 predictor types, feature engineering, interpretation (`artifacts/shap_final.npz`, `.json`), all models tried including failures, robustness (`artifacts/stress_final.json`). Clearly titled sections, name, id and team at the top.
 3. Deadline 2026-11-08 22:00 Oslo (strict): select 2 Kaggle predictions, deliver notebooks and report on Canvas.
 
