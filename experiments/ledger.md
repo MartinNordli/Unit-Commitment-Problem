@@ -72,3 +72,6 @@ Synthetic data was discussed and judged unlikely to raise the score in general: 
 
 ## Final model for notebook 1 (fixed 2026-11-03)
 XGBoost `base,lp,ls` without absolute price columns, seeds 0,1,2, 300 rounds, eta 0.08 + ST-Net `base,lp,ls` with them, e24, d=64, seeds 0,1,2. Logit blend 0.7/0.3. Trained on 2015-2022.
+
+## R22 (registered 2026-11-03, before running)
+Stress test of the final blend (`submission/build/stress2.py`), same perturbations as R9, ST-Net now with absolute prices, e24, weight 0.7/0.3, 1 seed each. Hypothesis: `negative_cheapest` and `scale_*` get worse for the net than in R9 because it now sees absolute prices, and the blend inherits part of that. Sensitivity only, not a true score. Informs the hedge in notebook 2.
