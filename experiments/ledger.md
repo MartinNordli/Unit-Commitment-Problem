@@ -50,3 +50,15 @@ Known limit: these choices were made looking at labels from all years, so OOF an
 - R17 `XR_ls_f` (`base,lp,ls`, 66 features): forward 0.99341, +0.00037 vs XR_ref_f, 3/4 years (2021 -0.00003). Hypothesis holds: same as R11 within noise with fewer features.
 - R11 clean rerun `XR_sens_f2`: 0.99338, identical per year to the dirty run, so the dirty flag changed nothing and GPU XGBoost reproduces exactly with the same seeds.
 - LOYO from clean code still to run for both before the gate can pass them.
+
+## Optional proposal, not required to explore (2026-11-03)
+Synthetic data was discussed and judged unlikely to raise the score in general: noise changes the correct label, rolling cases already act as time shifts, and LP-labelled cases hold none of the SHOP-minus-LP residual the model learns.
+- P1 Negative prices: push the cheapest hours of training weeks below zero and label them with the MILP/LP or a physical rule. Negative prices are 2.2 % of test hours and 0.014 % of train. Forward and LOYO cannot confirm it, because the validation years hardly contain such hours. Only suited to a hedge in notebook 2, and the report must say it could not be validated on labels.
+- P2 Scale price and water values together as augmentation on ST-Net. Testable through the gate. Expected zero or slightly negative, since absolute prices carry information for the net (R6, R10).
+
+## Round 4 (registered 2026-11-03, before running)
+- R18 LOYO from clean code: `XR_ls` (66 features) and `XR_sens2` (79) against XR_ref. Expected about +0.0002. The 6/8 years criterion is close (dirty R11 had exactly 6/8), so a fail is possible. If `XR_ls` passes it is the tree feature set; if not, trees stay on `XR_min`-type features.
+- R19 `ls_*` on ST-Net: `N5_ls`, `N5f_ls` (`base,lp,lps,mf,ls`, e24, seeds 0,1,2) vs N4_v4_scale, N4f_e24_scale. Expected +0.0001 to +0.0005 forward, smaller in the blend.
+- R20 Settle e12 vs e24 on the same seeds: `N9b_e12_s345`, `N9f2_e12_s345`, against N4b_s345, N4f2_s345. Expected: no clear winner.
+- R21 ST-Net without `mf_*` and `lps_*`: `N6_min`, `N6f_min` (`base,lp,ls`, e24, seeds 0,1,2). Expected level with R19 within net seed noise (up to 0.00035), and then preferred for simplicity.
+- Note: net seed noise is larger than the gate's 0.0001, so net choices are also judged by their effect in the blend.
