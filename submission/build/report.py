@@ -512,7 +512,7 @@ for ax, M, tt in ((axs[1], Y[k], "SHOP's decision (label)"), (axs[2], LPU[k], "L
 axs[3].set_xticks(range(0, 168, 24), [f"day {d + 1}" for d in range(7)]); plt.show()
 
 # %% [markdown]
-# This is the mechanism in one case. The LP has most of the week's plan without training: Tokke, Lio and Byrte are almost exactly right. It is wrong in places. It holds Hogga and the Vinje units off for the first day or more while SHOP runs them, and it switches Haukeli off late in day 7. The blend keeps the plan, moves toward SHOP in those places (Hogga and Vinje become uncertain instead of off, and Haukeli stays on), and is partly right about the short Kjela runs the LP mostly misses. It still misses the short off periods for Vinje G3 and Hogga in days 5-7.
+# This is the mechanism in one case. The LP has most of the week's plan without training: Tokke, Lio and Byrte are almost exactly right. It is wrong in places. It holds Hogga, Vinje and Haukeli off for the first day or more while SHOP runs them, and it switches Haukeli off late in day 7. The blend keeps the plan, moves toward SHOP in those places (Hogga and Vinje become uncertain instead of off, and Haukeli stays on), and partly picks up the short Kjela runs that the LP mostly misses. It also inherits LP errors: in days 5-7 it follows the LP's on/off pattern for Hogga, where SHOP simply stays on.
 
 # %% [markdown]
 # ## 9. Error analysis
