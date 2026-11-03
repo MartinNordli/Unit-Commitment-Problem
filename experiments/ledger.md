@@ -98,3 +98,6 @@ First attempt, job 25904579, did not run the notebook: `jupyter` has a fixed int
 ## Results R23 final and notebook 2 clean run (2026-11-03)
 `N7_noabs` LOYO 0.99320 vs `N6_min` 0.99334. Blend with `XR_ls` at 0.7: LOYO 0.99399 vs 0.994. The net alone fails the gate against `N6_min`, as expected for a hedge that is not meant to pass it. Test predictions differ from submission 1 at Spearman 0.99889.
 Notebook 2 from an empty directory, 4 cores, H100: 42.3 minutes, LP 39.2. XGBoost logits identical to the research run, ST-Net Spearman 0.99999, max logit difference 0.145. Output `artifacts/submission_2.csv`.
+
+## R24 (registered 2026-11-03, before running)
+Interpretation for the report (`submission/build/interp_final.py`). No model selection. Trained before 2022, measured on 2022, seed 0. Permutation importance for XGBoost, ST-Net and blend: each (case, unit) gets its week-long feature track from another random (case, unit), for single features and for six groups (market, calendar, unit identity, water state, LP schedule, LP sensitivity). Partial dependence for XGBoost on top features. Hypothesis: both models lean mainly on the LP schedule; the net loses more than the trees when market price features are shuffled, because it has the absolute columns. Sensitivity only, since shuffled inputs are not physically consistent.
