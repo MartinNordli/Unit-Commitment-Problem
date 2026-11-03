@@ -94,3 +94,7 @@ Optional proposal P1 stays unexplored.
 
 ## Worst-case notebook test
 First attempt, job 25904579, did not run the notebook: `jupyter` has a fixed interpreter path in its first line, while Slurm reported COMPLETED. Fixed and resubmitted.
+
+## Results R23 final and notebook 2 clean run (2026-11-03)
+`N7_noabs` LOYO 0.99320 vs `N6_min` 0.99334. Blend with `XR_ls` at 0.7: LOYO 0.99399 vs 0.994. The net alone fails the gate against `N6_min`, as expected for a hedge that is not meant to pass it. Test predictions differ from submission 1 at Spearman 0.99889.
+Notebook 2 from an empty directory, 4 cores, H100: 42.3 minutes, LP 39.2. XGBoost logits identical to the research run, ST-Net Spearman 0.99999, max logit difference 0.145. Output `artifacts/submission_2.csv`.
