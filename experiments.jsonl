@@ -73,3 +73,4 @@
 {"name": "N7f_noabs", "oof_auc": 0.9925638581095979, "per_year": {"2019": 0.99382, "2020": 0.9899, "2021": 0.99439, "2022": 0.99127}, "n_cases": 1461, "worst_year": 0.9899, "commit": "5f0c925", "dirty": false, "n_features": 64, "seeds": "0,1,2", "forward": true, "epochs": 24, "d": 64}
 {"name": "N7_noabs", "oof_auc": 0.9931988558310598, "per_year": {"2015": 0.99325, "2016": 0.99533, "2017": 0.9942, "2018": 0.98934, "2019": 0.99404, "2020": 0.99094, "2021": 0.99468, "2022": 0.99127}, "n_cases": 2922, "worst_year": 0.98934, "commit": "1fab74c", "dirty": false, "n_features": 64, "seeds": "0,1,2", "forward": false, "epochs": 24, "d": 64}
 {"name":"submission_2_ready","oof_auc":0.99399,"file":"artifacts/submission_2.csv","note":"from Short notebook 2, forward 0.99379; not yet scored on Kaggle"}
+{"name":"submission_2_public_LB","public_lb":0.99635,"file":"artifacts/submission_2.csv","note":"sanity check only, reported by the user"}

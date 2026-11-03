@@ -83,7 +83,7 @@ Final blend, change in AUC on perturbed 2022 inputs: scale_0.5 -0.00007, scale_2
 From an empty directory, 4 cores, H100: 50.6 minutes, LP 47.6. All LP schedules identical to the research artifacts. XGBoost logits identical. ST-Net logits max difference 0.125, Spearman 0.99999, because GPU training is not bit-exact. Peak about 11 GB RAM, about 4 GB GPU (sampled every 15 s). float16 and CPU paths tested on random data at real shapes; CPU estimate 4-5 hours in total. Not run on a smaller GPU.
 
 ## Public LB (2026-11-03)
-`submission_1.csv` scored 0.99638, against 0.99626 for B2. Independent sanity check only, not used for selection. Notebook 1 now repeats the best Kaggle score.
+`submission_1.csv` scored 0.99638, against 0.99626 for B2. `submission_2.csv` scored 0.99635. Independent sanity check only, not used for selection. Notebook 1 now repeats the best Kaggle score. The hedge costs 0.00003 on public, in line with forward (equal) and LOYO (-0.00001).
 
 ## R23 (registered 2026-11-03, before running)
 Hedge for notebook 2. Notebook 1 bets that absolute price levels help the net (R6, R21), and test years have a different price distribution. Candidate: same blend, but ST-Net without absolute price columns as well, so nothing in the model reads the price level directly: `N7_noabs`, `N7f_noabs` (`base,lp,ls`, drop the 6 absolute columns, e24, seeds 0,1,2). Expected net forward 0.0003 to 0.0007 below `N6f_min`, blend less. Accepted as hedge if blend forward is within 0.0005 of notebook 1's 0.99379 and `scale_4` in the stress test is no worse. It is a hedge, so it does not need to beat notebook 1 and does not go through the gate.
