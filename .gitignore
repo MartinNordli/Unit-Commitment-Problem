@@ -8,3 +8,4 @@ sample_submission.csv
 prediction_mapping.csv
 schedule_visualization.ipynb
 .venv/
+catboost_info/
