@@ -31,3 +31,7 @@ Known limit: these choices were made looking at labels from all years, so OOF an
 
 ## Registered 2026-11-03, second round
 - R11 Add `ls_*` (= R5). R12 Drop both `mf_*` and `lps_*`. R13 XGBoost eta 0.04, 800 rounds. R14 ST-Net seeds 3-5, does a larger seed ensemble help? R15 ST-Net d=96. R16 Forward blend of all families.
+
+## Round 3 (registered 2026-11-03, before running)
+- R17 `ls_*` without `mf_*` and `lps_*`: R12 says those two groups add nothing, R11 says `ls_*` adds. Expected: same as R11 within noise, with fewer features.
+- Note: R11-R15 report dirty=true because src/blend3.py was untracked when they ran. No trainer imports it. The gate does not accept them; whatever goes forward is rerun from a clean commit.
