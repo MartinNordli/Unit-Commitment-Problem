@@ -16,7 +16,7 @@ def solve(a):
     return {k: r[k] for k in ("u", "pfrac", "V", "dual", "conv", "flows")}
 if __name__ == "__main__":
     c = load_cases(); Y = c["Y"].astype(np.float32); tr, va = forward_folds()[2022]; rng = np.random.default_rng(0); va = va[::2]; n = len(va)
-    Z = np.load(f"{ROOT}/artifacts/lp/lp4_b10.npz"); S_ = [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)]; Xa, names = build(c, Z, None, S_); k = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in SCALE]; kn = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in ("unit_id", "plant_id")]
+    Z = np.load(f"{ROOT}/artifacts/lp/lp4_b10.npz"); S_ = [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)]; Xa, names = build(c, Z, None, S_); k = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in SCALE]; kn = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in ("unit_id", "plant_id") and not (os.environ.get("NET_NOABS") and x in SCALE)]
     dev = "cuda"; P = dict(objective="binary:logistic", device=dev, tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0, min_child_weight=50, subsample=.5, colsample_bytree=.8, reg_lambda=1., max_bin=255, verbosity=0, seed=0)
     gb = xgb.train(P, xgb.DMatrix(Xa[tr][..., k].reshape(-1, len(k)), label=Y[tr].reshape(-1)), num_boost_round=300)
     import train_net as tn, argparse
@@ -41,4 +41,4 @@ if __name__ == "__main__":
                 m = np.zeros((n, 168), bool); o = np.argsort(c["price"][va], 1)[:, :17]; [m[i].__setitem__(o[i], True) for i in range(n)]; sig = lambda a: 1 / (1 + np.exp(-a)); M = np.repeat(m[:, None], 14, 1)
                 r.update(p_on_before=float(sig(f(pg0, pn0))[M].mean()), p_on_after=float(sig(bl)[M].mean()), lp_on_before=float(Z["u"][va][M].mean()), lp_on_after=float(z["u"][M].mean()))
             res[name] = r; print(name, {a_: round(b_, 5) for a_, b_ in r.items()}, round(time.time() - t), "s", flush=True)
-    json.dump(res, open(f"{ROOT}/artifacts/stress_final.json", "w"))
+    json.dump(res, open(f"{ROOT}/artifacts/stress_{os.environ.get("STRESS_NAME", "final")}.json", "w"))

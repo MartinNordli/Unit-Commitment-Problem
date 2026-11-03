@@ -16,8 +16,7 @@ Read first: this file, `experiments/ledger.md` (R1-R17), the three task PDFs in 
 ## Where things stand (updated 2026-11-03 21:50)
 - Round 4 is done, see the ledger. Final model: XGBoost `base,lp,ls` + ST-Net `base,lp,ls` e24, logit blend 0.7/0.3. Forward 0.99379, LOYO 0.994.
 - Notebook 1 is done and verified from an empty directory: `submission/Short notebook 1.ipynb`, `submission/requirements.txt`, output `artifacts/submission_1.csv`. Built from `submission/build/nb1.py` with `mknb.py`; `run_clean.sh` does the clean run. Trees reproduce the research run exactly, the net to Spearman 0.99999 (GPU training is not bit-exact).
-- The user uploads `artifacts/submission_1.csv`. Earlier submission: B2, public LB 0.99626, not from a notebook.
-- Kaggle rule: at least one notebook must repeat the best Kaggle score. If submission_1 scores below B2 on public, this needs a decision.
+- `artifacts/submission_1.csv` is on Kaggle: public LB 0.99638, the best so far (B2 0.99626). Notebook 1 repeats the best Kaggle score.
 
 ## Next steps, in order
 1. Notebook 2: hedge with a different risk profile. Trees only is a weak hedge against negative prices (R22). Optional proposal P1 in the ledger is not required.
