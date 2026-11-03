@@ -88,3 +88,9 @@ From an empty directory, 4 cores, H100: 50.6 minutes, LP 47.6. All LP schedules 
 ## R23 (registered 2026-11-03, before running)
 Hedge for notebook 2. Notebook 1 bets that absolute price levels help the net (R6, R21), and test years have a different price distribution. Candidate: same blend, but ST-Net without absolute price columns as well, so nothing in the model reads the price level directly: `N7_noabs`, `N7f_noabs` (`base,lp,ls`, drop the 6 absolute columns, e24, seeds 0,1,2). Expected net forward 0.0003 to 0.0007 below `N6f_min`, blend less. Accepted as hedge if blend forward is within 0.0005 of notebook 1's 0.99379 and `scale_4` in the stress test is no worse. It is a hedge, so it does not need to beat notebook 1 and does not go through the gate.
 Optional proposal P1 stays unexplored.
+
+## Results R23 so far (2026-11-03, commit 5f0c925)
+`N7f_noabs` net forward 0.99256 vs `N6f_min` 0.99278, smaller loss than expected. Blend with `XR_ls`, trees 0.6/0.7/0.8: 0.99377/0.99379/0.99374, level with notebook 1 at 0.7 (0.99379). Stress: scale_4 -0.00177 vs -0.00231, negative_cheapest -0.00668 vs -0.00722, price_noise -0.00759 vs -0.00754, unperturbed 0.99234 vs 0.99254 on half of 2022. Both criteria met: accepted as the hedge for notebook 2. LOYO still running, for the record.
+
+## Worst-case notebook test
+First attempt, job 25904579, did not run the notebook: `jupyter` has a fixed interpreter path in its first line, while Slurm reported COMPLETED. Fixed and resubmitted.
