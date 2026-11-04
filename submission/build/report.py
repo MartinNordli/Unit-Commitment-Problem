@@ -7,11 +7,11 @@
 # **Group:** 197  
 # **Course:** TDT4173 Modern Machine Learning in Practice
 #
-# This notebook is the report. It was run once, and every figure and most tables below are computed in the cells from the raw data and the saved results of my experiments. The hand-written tables quote the experiment log.
+# Figures and computed tables come from the cells below, using the raw data and saved experiment results. Hand-written tables quote the experiment log.
 #
 # ## Contents
 # 1. Summary
-# 2. The task
+# 2. Task
 # 3. Exploratory data analysis
 #    - 3.1 Search domain knowledge
 #    - 3.2 Understand how the data was generated
@@ -20,13 +20,13 @@
 #    - 3.5 Explore pairs and groups of features
 #    - 3.6 Clean up features
 # 4. Validation
-# 5. Feature engineering (the LP surrogate, extraction and selection)
+# 5. Feature engineering
 # 6. All models and algorithms tried
-# 7. The final models and how the hyperparameters were chosen
-# 8. Model interpretation (SHAP, permutation importance, partial dependence)
+# 7. Final models and hyperparameters
+# 8. Model interpretation
 # 9. Error analysis
 # 10. Robustness
-# 11. Reproducibility of the short notebooks
+# 11. Reproducibility
 # 12. Limitations
 
 # %%
@@ -64,54 +64,52 @@ print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfin
 # %% [markdown]
 # ## 1. Summary
 #
-# **The main idea.** Solving the true problem (a mixed-integer program in SHOP) for every case is not possible without SHOP, but its linear relaxation is. I wrote a linear program (LP) of the whole watercourse, solved it three times for every case with HiGHS, and gave the solution to the models as features. The LP has no trained parameters: it reads only the case inputs and the topology file. The machine learning models then learn what separates SHOP from the LP.
-#
-# **The result.** Features built by hand, without an optimiser, reached a best blended cross-validation AUC of 0.986 and public leaderboard 0.98906. Adding the LP took the blend to 0.994 and 0.99638. The LP solution was the largest single step in the project.
+# I wrote a linear program (LP) of the whole watercourse, solved it three times per case with HiGHS, and gave the solutions to the models as features. The LP reads only the case inputs and the topology file and has no trained parameters. The models learn the gap between the LP and SHOP.
 #
 # | Submission | Model | LOYO AUC (2015-22) | Forward AUC (2019-22) | Public LB |
 # |---|---|---|---|---|
 # | **Short notebook 1** | XGBoost + ST-Net, logit blend 0.7/0.3 | 0.99400 | 0.99379 | **0.99638** |
 # | **Short notebook 2** | Same, ST-Net without absolute price columns | 0.99399 | 0.99379 | 0.99635 |
-# | B2, earlier blend | 3 GBDT + 2 ST-Net (nested weights) | 0.99377 | - | 0.99626 |
-# | E021a, best without LP | LightGBM + ST-Net (nested weights) | 0.98584 | - | 0.98906 |
+# | B2, earlier blend | 3 GBDT + 2 ST-Net, nested weights | 0.99377 | - | 0.99626 |
+# | E021a, best without LP | LightGBM + ST-Net, nested weights | 0.98584 | - | 0.98906 |
 #
-# Models were selected on LOYO and forward validation. The public leaderboard was used only as a check. The two submissions are close to identical (Spearman 0.99889 between them), so notebook 2 is a small hedge against one specific risk (Section 10), not a second independent bet.
+# Selection used LOYO and forward validation. The public leaderboard was only a check. The two submissions are nearly identical (Spearman 0.99889); notebook 2 hedges one specific risk (Section 10.2).
 #
-# Limitations are stated in Section 12. The most important ones are that the design of the LP was chosen while looking at labels from all training years, so no part of 2015-2022 is truly untouched, and that SHOP's behaviour at negative prices cannot be checked with these labels.
+# Main limitations (Section 12): the LP was designed using labels from all training years, and behaviour at negative prices cannot be verified.
 
 # %% [markdown]
-# ## 2. The task
+# ## 2. Task
 #
-# SHOP is SINTEF's short-term hydropower scheduling software. For Tokke-Vinje (17 reservoirs, 9 plants, 14 units, 1000 MW) it solves a one-week schedule for each day from 2015-01-01 to 2024-12-25. The task is to predict the on/off decision for each of the 14 units in each of the 168 hours of a case. Scoring is micro-averaged ROC AUC over all (case, unit, hour) values.
+# SHOP, SINTEF's scheduling software, solved a one-week schedule for Tokke-Vinje (17 reservoirs, 9 plants, 14 units, 1000 MW) for each day from 2015-01-01 to 2024-12-25. The task is to predict on/off for each unit and each of the 168 hours in a case. The metric is micro-averaged ROC AUC.
 #
-# - **Train:** 2922 cases from 2015-2022 with SHOP's decisions as labels.
-# - **Test:** 725 cases from 2023-01-01 to 2024-12-25. The split is purely in time, so this is extrapolation to new years.
-# - **Inputs:** hourly prices and inflows, daily reservoir volumes and water values, minimum flow and volume constraints, and the watercourse topology.
+# - **Train:** 2922 cases, 2015-2022.
+# - **Test:** 725 cases, 2023-01-01 to 2024-12-25. The split is in time, so this is extrapolation.
+# - **Inputs:** hourly prices and inflows, daily volumes and water values, minimum flow and volume constraints, topology.
 #
-# Since grading uses the private leaderboard and the two parts of the test set are not known, I optimised for generalisation to new years rather than for the public score.
+# Grading uses the private leaderboard, so I optimised for new years, not the public score.
 
 # %% [markdown]
 # ## 3. Exploratory data analysis
 # ### 3.1 Search domain knowledge
 #
-# Sources: the task description, the dataset documentation, the SHOP documentation linked from it, and the topology files (`Tokke_topology.pdf`, `Tokke_Vinje_topology.yaml`). What I took from them:
+# Sources: the task description, the dataset documentation, the SHOP documentation and the topology files.
 #
-# - **Water value.** Water used now cannot be sold later. The water value is the estimated future worth of a reservoir's marginal water, in EUR/MWh. Roughly, a unit should run when the price exceeds the value of the water it would use. This makes price against water value the core comparison.
-# - **Cascades.** Water released from a plant reaches a lower reservoir, where it is still worth something. The true cost of running therefore depends on the watercourse, not just the reservoir feeding the plant.
-# - **Efficiency and head.** A unit converts flow to power along a concave curve that depends on head (the height of the water) and on losses in tunnels and penstocks. Best efficiency is below maximum power, and units in a plant share tunnel losses.
-# - **Non-convex parts.** Start costs, minimum power and the on/off status itself are what make the true problem a mixed-integer program. Identical units are a source of symmetry, which solvers usually break with a fixed order.
-# - **Environmental constraints.** Minimum flows and minimum volumes can force production or bypass whatever the price is.
-# - **Flood weeks.** If a reservoir is about to spill, water is close to free, so units can run at very low prices.
+# - **Water value:** the estimated future worth of a reservoir's marginal water, in EUR/MWh. A unit should roughly run when the price exceeds the value of the water it uses.
+# - **Cascades:** released water reaches a lower reservoir, where it still has value. The cost of running depends on the watercourse.
+# - **Efficiency and head:** power is a concave function of flow and depends on head and on tunnel and penstock losses.
+# - **Non-convexity:** start costs, minimum power and on/off status make the true problem a mixed-integer program. Identical units create symmetry, which solvers usually break with a fixed order.
+# - **Environmental constraints:** minimum flows and volumes can force production or bypass at any price.
+# - **Floods:** water about to spill is nearly free, so units may run at very low prices.
 
 # %% [markdown]
 # ### 3.2 Understand how the data was generated
 #
-# The labels are the output of an optimiser, SHOP v17.17.0, on one fixed model of the watercourse, so they are a deterministic function of the inputs and not a noisy measurement of the real world. This has two consequences that shaped the whole project:
+# The labels are the output of an optimiser (SHOP v17.17.0) on a fixed model, not noisy measurements. Two consequences:
 #
-# 1. In principle nothing is random in the label, so any remaining error is something I have not modelled. This motivates rebuilding the optimisation problem instead of only learning from examples.
-# 2. Only what SHOP received can be a legitimate input. For a case starting on day $d$, this is the 168 hours of price, inflow and constraints, the start volumes at $d$, and the water values at the end of the week, $d+7$ (as the dataset documentation states). I read later volumes and intermediate water values as outside the input, and the feature code cannot reach them.
+# 1. Remaining error is something not yet modelled, which motivates rebuilding the optimisation problem.
+# 2. Only what SHOP received is a legitimate input: 168 hours of price, inflow and constraints, start volumes at day $d$, and water values at $d+7$. The feature code cannot reach later volumes or intermediate water values.
 #
-# Cases roll daily, so neighbouring cases share 6 of 7 days. The cell below shows that this matters for validation, and that SHOP often changes its mind about the same hour when it is re-solved one day later, since the horizon and start state have moved.
+# Cases roll daily, so neighbours share 6 of 7 days.
 
 # %%
 agree = {f"{l} day(s) later": float((Y[l:, :, :168 - 24 * l] == Y[:-l, :, 24 * l:]).mean()) for l in (1, 2, 3, 6)}
@@ -126,16 +124,14 @@ for a, b in [("Vinje_G1", "Vinje_G2"), ("Vinje_G2", "Vinje_G3"), ("Tokke_G1", "T
     print(f"  {a} >= {b}: {(Y[:, i(a)] >= Y[:, i(b)]).mean():.4f}")
 
 # %% [markdown]
-# Reading these outputs:
-#
-# - Only 88 % of decisions for the same clock hour survive a re-solve one day later, and 74 % six days later. Target hours near the horizon end depend heavily on the case. So predictions for the same clock hour should not be expected to agree across cases, and a later experiment that smoothed them across neighbouring cases (Section 6) made every year worse.
-# - A unit-week is constant (all on or all off) in 59 % of cases, so getting the weekly level right matters a lot.
-# - Identical units follow a nearly deterministic start order. Without this, the model has no way of telling Tokke G1 from G2. I used it directly in the LP and as a structural constraint in ST-Net's output. The last pair holds only 98.1 % of hours, so I imposed it in the LP but left it out of the net.
+# - Only 88 % of decisions for the same clock hour survive a re-solve one day later, and 74 % six days later. Smoothing predictions across neighbouring cases made every year worse (Section 6.1).
+# - 59 % of unit-weeks are constant (all on or all off), so the weekly level matters.
+# - Identical units follow a near-deterministic start order. The LP uses all six pairs. ST-Net's output layer uses the first five, since the last holds in only 98.1 % of hours.
 
 # %% [markdown]
 # ### 3.3 Check if the data is intuitive
 #
-# The two figures below test the domain story from 3.1. Do units run when the price exceeds the water value? Does on-share follow the market?
+# Do units run when the price exceeds the water value? Does on-share follow the market?
 
 # %%
 ri = {r: k for k, r in enumerate(RES)}; wk = np.arange(0, len(P), 7); dates = starts[wk]; wv = c["wv_end"]
@@ -158,13 +154,13 @@ fig.suptitle("Share of hours on against price minus upstream water value (EUR/MW
 display(pd.DataFrame(rowsT).round(2))
 
 # %% [markdown]
-# Mostly yes, with informative exceptions:
+# Mostly yes, with exceptions:
 #
-# - Water values track the market (correlation 0.93 between weekly price and mean water value), so a high price alone does not mean a unit should run. The relevant quantity is relative.
-# - On-share rises across zero margin, as expected. Byrte, Songa, Kjela and Vesle Kjela are close to clean steps. Hogga, Tokke, Lio, Vinje and Haukeli still run 15-50 % of the time at a strongly negative margin. This could be forced production from minimum flow and spill, which a simple margin cannot see, and is what a model of the whole watercourse is for. Vinje's first unit also stays below 0.85 at positive margins.
-# - The table is a rough check. For each plant-week with mixed on/off hours I take a threshold midway between the median price of on hours and off hours, then regress it on upstream and downstream water value. The upstream coefficient is the larger one for every plant, but Vinje (0.53 and 0.50) and Tokke (0.58 and 0.26) also give the downstream value clear weight. This estimator is crude, so it is only a hint.
+# - Weekly price and mean water value correlate at 0.93, so a high price alone does not mean a unit should run.
+# - On-share rises across zero margin. Byrte, Songa, Kjela and Vesle Kjela are close to clean steps. Hogga, Tokke, Lio, Vinje and Haukeli still run 15-50 % of the time at strongly negative margins, possibly from minimum flow or spill.
+# - The table regresses a rough per-week price threshold (midway between median on and off prices) on water values. The upstream coefficient is largest for every plant, but Vinje (0.53, 0.50) and Tokke (0.58, 0.26) also weight the downstream value. The estimator is crude, so this is only a hint.
 #
-# My first reading was that the value of water in a reservoir should be converted to money with that reservoir's own energy factor, locally or summed down the cascade. An LP built that way scored far worse than one with telescoping values (LP alone: AUC 0.606 and 0.743 for the two first conventions, against 0.932 for telescoping, Section 5). So the intuitive reading of the water values was wrong, and only testing against the labels showed it.
+# My first reading was wrong: converting a reservoir's water value with its own energy factor, locally or summed down the cascade, gave an LP AUC of 0.606 and 0.743. Telescoping values gave 0.932 (Section 5.1). Only testing against labels revealed this.
 
 # %% [markdown]
 # ### 3.4 Explore individual features
@@ -185,13 +181,12 @@ print("Hours with negative prices inside cases, train:", round(float((P[:N_TR] <
 print("Switches per unit-week:", {u: round(float(v), 1) for u, v in zip(UNITS, np.abs(np.diff(Y, axis=2)).sum(2).mean(0))})
 
 # %% [markdown]
-# What this shows:
-#
-# - **Strong regimes.** Median price ranged from 7 EUR/MWh (2020, flooded and nearly free) to 181 EUR/MWh (2022, energy crisis), and on-share dropped from 0.60 to 0.34, in the opposite direction of what price alone would suggest. Price level alone cannot explain the labels.
-# - **Heavy tails, both ways.** Prices reach 898 EUR/MWh in 2024 and -62 in 2023. An `asinh` transform handles both.
-# - **The test set is different in one way that matters:** negative prices are 2.2 % of test hours and 0.014 % of train hours. Otherwise, test price levels stay close to the range training has seen (maximum 898 against 844 EUR/MWh). Section 10 returns to this.
-# - **Inflow is seasonal,** with a large peak in May and June and a smaller one in autumn. The effect on on-share depends on the plant: Tokke G1 peaks in May (0.83), while Lio and Vinje G3 dip then. So season alone does not set the level. Base rates also differ widely between units (Vinje G3 26 %, Lio 75 %) and between years for one unit (Kjela 14 % in 2021, 73 % in 2018).
-# - **The on-share is bimodal** with spikes at 0 and 1, which agrees with 3.2.
+# - **Regimes:** median price ranged from 7 EUR/MWh (2020) to 181 (2022), while on-share fell from 0.60 to 0.34. Price level alone does not explain the labels.
+# - **Heavy tails:** prices reach 898 and -62 EUR/MWh. `asinh` handles both.
+# - **Test shift:** negative prices are 2.2 % of test hours and 0.014 % of train hours. Otherwise test prices stay near the training range (maximum 898 against 844).
+# - **Season:** inflow peaks in May and June, with a smaller autumn peak. The effect depends on the plant: Tokke G1 peaks in May (0.83), while Lio and Vinje G3 dip.
+# - **Base rates** differ between units (Vinje G3 26 %, Lio 75 %) and years (Kjela 14 % in 2021, 73 % in 2018).
+# - **Weekly on-share** is bimodal, with spikes at 0 and 1.
 
 # %% [markdown]
 # ### 3.5 Explore pairs and groups of features
@@ -209,12 +204,12 @@ print("Share of hours with a non-zero minimum flow:", {k: round(float(v), 2) for
 print("Reservoir fill, mean over days:", {k: round(float(v), 2) for k, v in zip(RES, (vmat / mx).mean(0))})
 
 # %% [markdown]
-# - Units in the same plant are strongly correlated, and so are Tokke and Vinje, which are hydraulically linked (0.4-0.8). Correlations elsewhere are low (0.1-0.4). Units are decided together, so sharing information across them (ST-Net's attention, the system features in the trees) should help, and did.
-# - Water values across reservoirs correlate at a median of 0.88 and at least 0.76, which is why ratios and differences carry the signal rather than the individual values.
-# - Constraints are calendar-driven and mostly a fixed function of date. As separate features, they add very little (E004 and R3 in Section 6). Their real effect is on the water balance, which the LP handles.
-# - In the scatter of price against water value, test cases mostly sit in the same band as train cases, with a few at unusually low water value for their price.
+# - Units in a plant correlate strongly, as do the hydraulically linked Tokke and Vinje (0.4-0.8). Other pairs are low (0.1-0.4).
+# - Water values across reservoirs correlate at 0.76 or more (median 0.88), so ratios and differences carry the signal.
+# - Constraints mostly follow the calendar and add little as columns (E004, R3). Their effect comes through the LP's water balance.
+# - Test cases mostly lie in the same price and water value band as train cases.
 #
-# **Drift check (adversarial validation).** A classifier tries to tell test hours from train hours, on alternating 60-day blocks so overlapping cases are kept together. High AUC means the feature set is easy to tell apart, which is a warning, though not proof of harm. Calendar and unit columns are left out because alternating blocks let the classifier memorise which dates are test.
+# **Adversarial validation.** A classifier separates test hours from train hours, using alternating 60-day blocks to keep overlapping cases together. Calendar and unit columns are excluded, since they let it memorise which dates are test.
 
 # %%
 dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(auc=lambda d: d.auc.astype(float).round(3)).rename_axis("Feature set").rename(columns={"n": "columns", "auc": "adversarial AUC", "top": "most used columns"}))
@@ -225,53 +220,51 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 # %% [markdown]
 # ### 3.6 Clean up features
 #
-# - **Missing values and duplicates.** No gaps or duplicate timestamps in any file in the case windows. `load_cases` asserts this for all 3647 cases, and all target columns are strictly 0 or 1. No imputation was needed.
-# - **Constant columns.** Volumes for `Hyljelihyl` and `Vatjern` are constant, since the documentation says they have no records and are assumed 50 % full. This is misleading for Haukeli, whose upstream reservoir is Vatjern, so `fill_up` carries no information for that unit (and `fill_down` none for Kjela, through Hyljelihyl). I kept the columns, since a tree can ignore them. The LP covers the water situation through the balance of the whole watercourse.
-# - **Time alignment.** All files are in UTC. Local Oslo time (with daylight saving) is derived for `hour_local` and `weekday_local`, since the market follows local time.
-# - **Scaling.** Prices and water values are heavy-tailed and go negative, so absolute levels use `asinh(x/10)`. Case-relative price columns divide by the case's interquartile range. For the net, every column is standardised on the training fold and clipped to ±6.
-# - **Feature removal.** See Section 5.3. Groups were kept or removed through the acceptance gate, and absolute price columns were dropped from the trees because they add nothing measurable there but are what separates train from test most sharply.
+# - **Gaps and duplicates:** none in the case windows, asserted for all 3647 cases. Labels are strictly 0 or 1. No imputation.
+# - **Constant columns:** volumes for `Hyljelihyl` and `Vatjern` are constant (no records, assumed 50 % full). `fill_up` is therefore empty for Haukeli and `fill_down` for Kjela. Kept, since trees can ignore them and the LP models the full water balance.
+# - **Time:** files are in UTC. `hour_local` and `weekday_local` use Oslo time, since the market does.
+# - **Scaling:** absolute levels use `asinh(x/10)`. Case-relative columns divide by the case's interquartile range. Net inputs are standardised on the training fold and clipped to ±6.
+# - **Removal:** by the gate (Section 5.3).
 
 # %% [markdown]
 # ## 4. Validation
 #
-# All models use the same locked folds, and the fold file, the metric and the lock are protected by SHA256 hashes checked at run time.
+# Folds, metric and lock are protected by SHA256 hashes checked at run time.
 #
-# - **Leave-one-year-out (LOYO):** 8 folds, 2015-2022, each validating on a full year. A 7-day purge on both sides removes every training case that shares an hour with validation.
-# - **Forward:** train strictly before the validation year, for 2019, 2020, 2021 and 2022. This is the closest analogue to the actual test split. It is reported separately because LOYO lets a model learn from later years, and forward validation sometimes disagrees.
-# - **Acceptance gate:** a change is accepted only if LOYO improves by more than measured seed noise (0.0001 for XGBoost, measured with 5 seeds), at least 6 of 8 years improve, forward does not lose more than the noise, and the run came from committed code. Hypotheses and expected effects were written in the experiment log before each run.
-# - **Label control:** with shuffled whole-case labels, AUC falls to 0.589, which is what unit and hour base rates alone can give. So no leakage is visible.
+# - **LOYO:** 8 folds, 2015-2022, with a 7-day purge on both sides to remove training cases sharing an hour with validation.
+# - **Forward:** train strictly before 2019, 2020, 2021 and 2022. Closest to the real split.
+# - **Gate:** LOYO gain above seed noise (0.0001, measured with 5 XGBoost seeds), at least 6 of 8 years up, forward loss within noise, committed code. Hypotheses were logged before each run.
+# - **Label control:** shuffled whole-case labels give 0.589, the level of base rates alone. No leakage visible.
 #
-# I did not tune on the public leaderboard, and it never decided between models. Blending weights in earlier work were nested (chosen on 7 years and tested on the 8th). For the final model I fixed 0.7 after seeing a flat range of weights (Section 7), so that number is not nested.
+# Earlier blend weights were nested. The final weight was not (Section 7).
 
 # %% [markdown]
 # ## 5. Feature engineering
 # ### 5.1 Feature extraction: the LP surrogate
 #
-# For each case I solve a linear program of the full watercourse for 168 hours:
+# For each case I solve:
 #
 # $$\max \sum_t \lambda_t \sum_{g} P_{g,t} \; + \; \sum_r v_r V_{r,168} \; - \; \text{flow costs} \; - \; \text{switching costs}$$
 #
-# subject to water balance for all 17 reservoirs, volume bounds, minimum flow, minimum volume, and a relaxed commitment $u_{g,t}\in[0,1]$. Power is a concave piecewise-linear function of flow, built per unit from the turbine and generator curves in the YAML file at the head implied by the start volume, including penstock and shared-tunnel losses. Head stays fixed within a week. Everything comes from the inputs SHOP gets and the YAML file. No labels and no fitted parameters are used.
+# subject to water balance for all 17 reservoirs, volume bounds, minimum flow, minimum volume and relaxed commitment $u_{g,t}\in[0,1]$. Power is concave piecewise-linear in flow, built per unit from the YAML turbine and generator curves at the head implied by the start volume, including penstock and shared-tunnel losses. Head is fixed within the week. No labels or fitted parameters are used.
 #
-# **Telescoping water values.** The terminal value is the key modelling decision. Water that ends the week in reservoir $r$ is worth its water value at the first plant below it, plus the value of the reservoir below that plant:
+# **Telescoping water values** are the key decision. Water ending the week in reservoir $r$ is worth:
 #
 # $$\text{value}(r) = w_r \cdot \text{conv}(\text{first plant below } r) + \text{value}(\text{reservoir below that plant})$$
 #
-# so the marginal value of running a plant nets out to about price minus its upstream water value. This matched the labels far better than the two conventions I tried first:
+# so a plant's margin nets out to about price minus upstream water value.
 #
-# | LP version | What it has | LP alone, AUC of $u$ | AUC of power fraction |
+# | LP version | Change | AUC of $u$, no training | AUC of power fraction |
 # |---|---|---|---|
-# | `lp_local` | Local value at each reservoir | 0.6062 | 0.6495 |
+# | `lp_local` | Local value per reservoir | 0.6062 | 0.6495 |
 # | `lp_global` | Global value down the cascade | 0.7431 | 0.7581 |
-# | `lp_tele` | Telescoping values | 0.9323 | 0.9470 |
-# | `lp_v2`, `lp_v3` | Added per-unit efficiency curves, head loss and priority order | 0.9442, 0.9558 | 0.9561, 0.9688 |
-# | **`lp4_b10`, final** | Added corrected Tokke order and river costs, bypass cost 10 | **0.9576** | **0.9705** |
+# | `lp_tele` | Telescoping | 0.9323 | 0.9470 |
+# | `lp_v2`, `lp_v3` | Per-unit curves, head loss, priority order | 0.9442, 0.9558 | 0.9561, 0.9688 |
+# | **`lp4_b10`, final** | Corrected Tokke order, river costs, bypass cost 10 | **0.9576** | **0.9705** |
 # | `lp4_b100`, `lp4_b1000` | Bypass cost sweep | 0.9527, 0.9517 | 0.9656, 0.9646 |
-# | `milp_v2`, `mp4_b10` | Integer schedule (MILP) on v2 and v4 | 0.9296, 0.9441 | 0.9445, 0.9606 |
+# | `milp_v2`, `mp4_b10` | Integer schedule on v2, v4 | 0.9296, 0.9441 | 0.9445, 0.9606 |
 #
-# Scores are on all 2922 training cases and need no fitting. They are all from this one set of labels, which I return to in Section 12. The relaxed LP scored higher than the integer MILP, since a fractional $u$ acts like a soft score, and adding MILP features to the trees did not help (L3 below).
-#
-# **Solves per case:** the final features use three: water values at x1.0, x0.9 and x1.1.
+# Scores cover all 2922 training cases. The relaxed LP beats the integer MILP, and MILP features did not help the trees (L3). The final features use three solves per case: water values x1.0, x0.9 and x1.1.
 
 # %%
 interp = json.load(open("artifacts/interp_final.json")); G = interp["groups"]
@@ -279,19 +272,19 @@ display(pd.DataFrame([dict(group=k, columns=len(v), examples=", ".join(v[:7]) + 
 print("Dropped from trees (ST-Net in notebook 1 keeps them):", open("artifacts/scale_cols.txt").read().strip())
 
 # %% [markdown]
-# ### 5.2 Features built on top of the LP
+# ### 5.2 Features built on the LP
 #
-# - **Schedule (`lp_*`, 36 columns):** LP commitment and power, its neighbours in time and rolling means, the marginal cost of running from reservoir shadow prices (`lp_margin`, `lp_margin_ratio`), hours to the nearest LP switch, the LP's output for the plant, for neighbouring plants and for the whole system, the fill trajectory of connected reservoirs, and bypass flow.
-# - **Sensitivity (`ls_*`, 7 columns):** the same LP with water values scaled by 0.9 and 1.1. A decision that stays the same under both is firm. One that flips is a near-tie, which is where the LP is most likely to disagree with SHOP. `ls_mean` is the mean of the three schedules.
-# - **Market and calendar (15):** ranks within week and day, deviations from rolling means, price relative to the week, and local time.
-# - **Unit and water state (14):** unit identity, capacity, start cost per MW, price against water value, fill and inflow for the connected reservoirs.
+# - **Schedule (`lp_*`, 36):** commitment and power, neighbours in time, rolling means, marginal cost from shadow prices (`lp_margin`, `lp_margin_ratio`), hours to the nearest switch, output per plant, neighbouring plants and system, reservoir trajectories, bypass flow.
+# - **Sensitivity (`ls_*`, 7):** the LP at water values x0.9 and x1.1. A decision that flips is a near-tie, where the LP most likely disagrees with SHOP. `ls_mean` averages the three schedules.
+# - **Market and calendar (15):** ranks within week and day, deviations from rolling means, local time.
+# - **Unit and water state (14):** identity, capacity, start cost per MW, price against water value, fill and inflow.
 #
-# Earlier, without the LP, I built features by hand for break-even prices, hydraulic state in hours of full-capacity production, neighbouring plants and whole-system state (Section 6.1). The LP replaced all of them with one mechanism.
+# Phase 1 used hand-built features for break-even prices, hydraulic state, neighbouring plants and system state (Section 6.1). The LP replaced them.
 
 # %% [markdown]
 # ### 5.3 Feature selection
 #
-# Groups were removed or added by the gate, one hypothesis at a time. All with XGBoost or ST-Net at 3 seeds, unless noted.
+# Each change went through the gate, with XGBoost or ST-Net at 3 seeds unless noted.
 
 # %%
 def row(n, ref=None):
@@ -309,51 +302,49 @@ T = [("Add `ls_*` (trees)", "XR_ls", "XR_min", "XR_ls_f", "XR_min_f", "Accepted.
 display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n]["oof_auc"] - rows[rf]["oof_auc"], "d forward": rows[nf]["oof_auc"] - rows[rff]["oof_auc"], "columns": rows[n].get("n_features"), "Decision": note} for a, n, rf, nf, rff, note in T]).round(5).set_index("Change"))
 
 # %% [markdown]
-# One finding I had wrong to begin with. I expected removing absolute price levels to help everywhere, since they are the biggest drift signal. For the trees, they indeed add nothing. For the net, however, forward AUC rose by 0.0007 with them (mostly from 2020), so they stayed. The hedge in notebook 2 is what I would use if that decision turned out wrong in the test years.
+# I expected removing absolute price levels to help everywhere, since they drift most. They add nothing to the trees, but raise the net's forward AUC by 0.0007, mostly from 2020, so the net kept them. Notebook 2 hedges this decision.
 
 # %% [markdown]
 # ## 6. All models and algorithms tried
 #
-# I worked in two phases. In the first phase (physics features and no optimiser), the models competed on hand-built features. In the second phase, every model got the LP as input.
-#
 # ### 6.1 Phase 1: without the LP
 #
-# All results are LOYO over 8 years unless marked *tuning* (2018, 2020 and 2022 only, used for early selection). The gate noise here was 0.00084 since LightGBM was more unstable on those features.
+# LOYO over 8 years unless marked *tuning* (2018, 2020, 2022 only). Gate noise in this phase was 0.00084.
 #
-# | Id | Model and idea | AUC | Outcome and what I learned |
+# | Id | Model or idea | AUC | Outcome |
 # |---|---|---|---|
-# | E000 | LightGBM on base features | 0.95415 | Reference. 2020 is the weakest year (0.92178) |
-# | E006 | Logistic regression (25 % of rows) | 0.89708 *tuning* | Baseline. Non-linear interactions matter |
-# | E006 | Random forest (10 % of rows) | 0.93927 *tuning* | Baseline, below LightGBM's 0.94791 on the same folds |
-# | E007 | XGBoost, same style of settings | 0.94888 *tuning* | On par with LightGBM, correlated 0.98, so no use in an ensemble then |
-# | E001 | Break-even price per plant | 0.95701 | Accepted, 8/8 years. Biggest help for Vinje |
-# | E002 | Separate stage-1 model for weekly level | -0.00163 *tuning* | Rejected, all folds worse. The hourly model learns level better itself |
-# | E003 | Hydraulic state in hours of full capacity | 0.96009 | Accepted, 8/8 years. 2020 +0.016, spill pressure explains running at low prices |
-# | E004 | Inflow anomaly and constraint columns | -0.00029 *tuning* | Rejected, inside noise |
-# | E005 | Monotone constraints on price | +0.00068 *tuning* | Rejected, below noise and very slow to train |
-# | E008 | UC-Net: dilated convolutions, Transformer, FiLM, priority head, aux head | 0.95893 | Different errors from LightGBM. Public LB not submitted alone |
-# | E009 | E001 + E003 together | 0.96295 | Accepted. Public LB 0.97252 |
-# | E010 | Scale-free features, no absolute price levels | 0.96409 | Gate fail, 4/8 years. Better in the extreme years only |
-# | E011 | Optuna tuning of LightGBM | 0.96389 | Rejected. All the gain sat in the folds that chose the parameters, the other 5 averaged -0.00014 |
-# | E012 | LightGBM + UC-Net logit blend, nested | 0.97847 | Accepted. Public LB 0.98506 |
-# | E013 | Neighbouring plant economics and spill pressure | 0.97919 | Accepted, +0.016 and 8/8 years. Largest feature gain in this phase |
-# | E014 | E013 + UC-Net, nested | 0.98254 | Accepted. Public LB 0.98845 |
-# | E015 | UC-Net with 3 nets per seed | 0.96461 | Passes. Reduced variance |
-# | E018 | UC-Net on E013 features | 0.96019 | Passes formally. Replaced by ST-Net |
+# | E000 | LightGBM, base features | 0.95415 | Reference. Weakest year 2020 (0.92178) |
+# | E006 | Logistic regression (25 % of rows) | 0.89708 *tuning* | Baseline |
+# | E006 | Random forest (10 % of rows) | 0.93927 *tuning* | Baseline. LightGBM has 0.94791 on these folds |
+# | E007 | XGBoost | 0.94888 *tuning* | Correlated 0.98 with LightGBM, so no ensemble value |
+# | E001 | Break-even price per plant | 0.95701 | Accepted, 8/8 years |
+# | E002 | Stage-1 weekly level model | -0.00163 *tuning* | Rejected, all folds worse |
+# | E003 | Hydraulic state in hours of full capacity | 0.96009 | Accepted, 8/8. 2020 +0.016 |
+# | E004 | Inflow anomaly, constraint columns | -0.00029 *tuning* | Rejected, inside noise |
+# | E005 | Monotone constraints on price | +0.00068 *tuning* | Rejected, below noise |
+# | E008 | UC-Net: dilated convolutions, Transformer, FiLM, priority and aux heads | 0.95893 | Errors differ from LightGBM |
+# | E009 | E001 + E003 | 0.96295 | Accepted. Public 0.97252 |
+# | E010 | No absolute price levels | 0.96409 | Gate fail, 4/8. Better only in extreme years |
+# | E011 | Optuna tuning of LightGBM | 0.96389 | Rejected. The 5 folds not used for tuning averaged -0.00014 |
+# | E012 | LightGBM + UC-Net, nested | 0.97847 | Accepted. Public 0.98506 |
+# | E013 | Neighbouring plant economics, spill pressure | 0.97919 | Accepted, +0.016, 8/8 |
+# | E014 | E013 + UC-Net, nested | 0.98254 | Accepted. Public 0.98845 |
+# | E015 | UC-Net, 3 nets per seed | 0.96461 | Passes. Lower variance |
+# | E018 | UC-Net on E013 features | 0.96019 | Passes. Replaced by ST-Net |
 # | E019 | ST-Net: one token per (unit, hour), attention across units | 0.98199 (3-seed ensemble 0.98425) | Accepted. Alone beats E014 |
-# | E020 | Per-plant blend weights | 0.98345 | Passes. Barely above noise |
-# | E021a | E013 + ST-Net, nested | **0.98584** | Best without LP. Public LB **0.98906** |
-# | - | Overlap smoothing across neighbouring cases | 0.98151 | Rejected. Worse in 8/8 years |
-# | E022 | ST-Net with 3 other seeds | 0.98187 (3-seed ensemble 0.98407) | Six seeds pooled add nothing measurable, so 3 are enough |
+# | E020 | Per-plant blend weights | 0.98345 | Passes, barely above noise |
+# | E021a | E013 + ST-Net, nested | **0.98584** | Best without LP. Public **0.98906** |
+# | - | Overlap smoothing across cases | 0.98151 | Rejected, worse in 8/8 |
+# | E022 | ST-Net, 3 other seeds | 0.98187 (3-seed ensemble 0.98407) | Six seeds add nothing measurable |
 # | E023 | ST-Net on E013 features | -0.00042 *tuning* | Rejected |
-# | E024 | ST-Net with pairwise ranking loss, direct for AUC | -0.00034 *tuning* | Rejected |
-# | E025 | Per-plant blend weights on E021a | 0.98604 | Rejected, below noise |
-# | E026 | LightGBM with whole-watercourse state | 0.98118 | Accepted as single model. Considered for notebook 2 and rejected: about 0.012 below the final blend |
-# | E027 | E026 + ST-Net | 0.98608 | Below noise, not used |
+# | E024 | ST-Net, pairwise ranking loss | -0.00034 *tuning* | Rejected |
+# | E025 | Per-plant weights on E021a | 0.98604 | Rejected, below noise |
+# | E026 | LightGBM, whole-watercourse state | 0.98118 | Accepted alone. Rejected for notebook 2, about 0.012 below the final blend |
+# | E027 | E026 + ST-Net | 0.98608 | Below noise |
 #
 # ### 6.2 Phase 2: with the LP
 #
-# All numbers below are read from the experiment log. "Forward" is train-before only. Rows are in the order they ran.
+# Numbers are read from the experiment log, in run order.
 
 # %%
 DESC = [("L0_base", "L0_base_fwd", "LightGBM", "No LP, base features", "Reference for what the LP adds"),
@@ -397,37 +388,37 @@ for lab, col in (("Without LP", BLUE), ("With LP", ORANGE), ("LP alone", YELLOW)
 ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not all 8 years, so not directly comparable with the others.")
 
 # %% [markdown]
-# Two different predictor families are in the final blend (gradient-boosted trees and a neural network). Logistic regression, random forest, LightGBM, XGBoost, CatBoost, UC-Net, ST-Net and the LP itself were all tested.
+# The final blend combines two predictor types: gradient-boosted trees and a neural network.
 #
-# Things considered but not run. Synthetic data was discussed and written down as optional: (P1) pushing the cheapest hours of training weeks below zero and labelling with the LP, and (P2) scaling price and water value together as augmentation. Noise would change the correct label, rolling cases already act as time shifts, and cases labelled by the LP hold none of the SHOP-minus-LP gap that the models learn. P1 could not be validated on labels at all, since validation years barely contain negative hours.
+# **Proposed, not run:** (P1) pushing the cheapest training hours below zero with LP labels, and (P2) scaling price and water value together. Noise changes the correct label, rolling cases already act as time shifts, and LP-labelled cases lack the SHOP-minus-LP gap the models learn. P1 also cannot be validated, since validation years barely contain negative hours.
 
 # %% [markdown]
-# ## 7. The final models and how the hyperparameters were chosen
+# ## 7. Final models and hyperparameters
 #
-# **XGBoost** (66 features: `base,lp,ls` without the 6 absolute price columns). Trained on long-format (case, unit, hour) rows, 3 seeds averaged in logit space.
+# **XGBoost:** 66 features (`base,lp,ls` without the 6 absolute price columns), long-format rows, 3 seeds averaged in logit space.
 #
-# | Parameter | Value | How it was obtained |
+# | Parameter | Value | Origin |
 # |---|---|---|
-# | `learning_rate`, rounds | 0.08, 300 | Set in E000 and kept. R13 (0.04, 800) was inside noise. Learning curves (Section 10) show validation still rises very slowly to about 1000 rounds and never falls |
-# | `max_leaves`, `grow_policy` | 63, lossguide | Set for LightGBM in E000 and copied to XGBoost. E011 (Optuna) found no gain outside the folds that chose it, so I stopped tuning trees |
-# | `min_child_weight` | 50 | Set when moving from LightGBM to XGBoost, as a rough counterpart to LightGBM's `min_data_in_leaf` of 500. Not tuned |
-# | `subsample`, `colsample_bytree`, `reg_lambda` | 0.5, 0.8, 1.0 | Same as E000, not tuned |
-# | Seeds | 3 | Seed std of 0.00003 LOYO and 0.00006-0.00009 forward (R1), so more seeds add nothing visible |
+# | `learning_rate`, rounds | 0.08, 300 | From E000. R13 (0.04, 800) was inside noise |
+# | `max_leaves`, `grow_policy` | 63, lossguide | From E000. Optuna (E011) gave no gain outside its own folds, so I stopped tuning trees |
+# | `min_child_weight` | 50 | Rough counterpart to LightGBM's `min_data_in_leaf` of 500. Not tuned |
+# | `subsample`, `colsample_bytree`, `reg_lambda` | 0.5, 0.8, 1.0 | From E000. Not tuned |
+# | Seeds | 3 | Seed std is 0.00003 LOYO, 0.00006-0.00009 forward (R1) |
 #
-# **ST-Net** (70 features: `base,lp,ls`). A token per (unit, hour). Four blocks, each with a dilated convolution over the week (dilation 1, 2, 4, 8) conditioned on a unit summary, and attention across the 14 units in the same hour with a learned unit-to-unit bias. One Transformer layer over the week follows. The output enforces the priority among identical units from 3.2 by subtracting a positive amount from the parent unit's logit. An auxiliary head predicts each unit's weekly on-share.
+# **ST-Net:** 70 features (`base,lp,ls`), one token per (unit, hour). Four blocks combine a dilated convolution over the week (dilation 1, 2, 4, 8, conditioned on a unit summary) with attention across units. One Transformer layer follows. The output enforces the start order from 3.2, and an auxiliary head predicts weekly on-share.
 #
-# | Parameter | Value | How it was obtained |
+# | Parameter | Value | Origin |
 # |---|---|---|
-# | Epochs | 24 | Compared on the same seeds (R20): e24 beats e12 on two seed sets, LOYO and forward. I claimed earlier that e24 overfits. That came from comparing 1 seed with 3, and the claim does not hold |
-# | `d`, blocks, heads | 64, 4, 4 | Chosen to be fast enough for repeated runs. d=96 was worse (R15, 1 of 4 years) |
-# | Dropout, weight decay | 0.1, 0.01 | Carried over from E019. Single-seed forward checks with dropout 0.25 (+0.00016) and with weight decay 0.1, dropout 0.2 and 16 epochs (+0.0006) looked better, but their e24 reference turned out to be an unlucky seed: the same setup with 3 seeds is +0.0012 above it (R10), above both checks. They were not repeated with 3 seeds, so these values were kept, not shown to be best |
-# | Learning rate, batch, EMA | 1e-3 with warmup and cosine decay, 32, 0.995 | Carried over from E008/E019 |
-# | Aux weight | 0.3 | Carried over from E008 |
-# | Seeds | 3 | Seed sets differ up to 0.00035 alone. In the blend, this nearly vanishes, and six seeds add nothing (R14) |
+# | Epochs | 24 | Beats e12 on two seed sets, LOYO and forward (R20) |
+# | `d`, blocks, heads | 64, 4, 4 | Sized for repeated runs. d=96 was worse (R15, 1/4 years) |
+# | Dropout, weight decay | 0.1, 0.01 | From E019. Single-seed checks of alternatives (+0.00016, +0.0006) stayed below the 3-seed reference (+0.0012, R10) and were not repeated at 3 seeds, so these values are kept, not shown best |
+# | Learning rate, batch, EMA | 1e-3 with warmup and cosine decay, 32, 0.995 | From E008 and E019 |
+# | Aux weight | 0.3 | From E008 |
+# | Seeds | 3 | Seed sets differ by up to 0.00035 alone, but barely in the blend. Six add nothing (R14) |
 #
-# **LP.** Values from the YAML file wherever it specifies them. The bypass cost was swept over 10, 100 and 1000 with the LP scored alone, and the documented value of 10 was the best. The ±10 % scale for the sensitivity solves was set before running, and not tuned.
+# **LP:** YAML values where specified. Bypass cost swept over 10, 100, 1000 on the LP alone; 10, the documented value, was best. The ±10 % sensitivity scale was set in advance.
 #
-# **Blend weight, 0.7 trees and 0.3 net in logit space.** Validation is flat over a wide range, as the table below shows. Nested weights on an earlier model set came out at 0.65-0.70 in all 8 folds. I fixed 0.7 before the last round and kept it. It isn't nested for the final pair, but the range is too flat for this to matter much.
+# **Blend weight:** 0.7 trees, 0.3 net, fixed before the last round. Validation is flat (table below), and nested weights on an earlier model set were 0.65-0.70 in all folds. The weight is not nested for the final pair.
 
 # %%
 f = lambda a, b, w: w * a + (1 - w) * b; okf = np.isfinite(XF).all((1, 2)); W = [.5, .6, .7, .8, .9, 1.]
@@ -437,7 +428,7 @@ print("Correlation between tree and net logits:", round(np.corrcoef(XT.ravel(), 
 # %% [markdown]
 # ## 8. Model interpretation
 #
-# Three methods on the final models. All were trained before 2022 and explained on held-out 2022, seed 0.
+# All methods use models trained before 2022 and explained on held-out 2022, seed 0.
 #
 # ### 8.1 SHAP on the trees
 
@@ -449,15 +440,14 @@ ax.legend(loc="lower right"); plt.show(); print("Share of total mean |SHAP| by g
 g_ = sj["gain"]; print("Top 8 by gain:", sorted(g_, key=g_.get, reverse=True)[:8])
 
 # %% [markdown]
-# Most of the model's attribution falls on features the LP supplies: 77 % for LP schedule and LP sensitivity together, with all market, calendar and unit columns sharing the rest.
+# LP features hold 77 % of the attribution.
 #
-# - `ls_mean` is first: the mean of the LP schedule at water values x0.9, x1.0 and x1.1. It acts as a soft version of the LP decision that knows how firm the decision is.
-# - `lp_margin_ratio` and `lp_margin_roll5` compare the price with the LP's marginal cost from shadow prices. So the model refines the LP's economics near a tie, instead of only copying the schedule.
-# - `lp_sys_t` (system production in that hour) shows the model relies on system state.
-# - `unit_index` and the unit columns adjust for the base rate of each unit, and for the start order from 3.2.
-# - `start_hours_wv` is start cost in hours of production at the water value. I expected a high value to discourage starting. The next figure shows the opposite: a high value goes with more running. High values occur when the water value is near zero, so this column seems to work mostly as a marker of cheap water, not as a start cost effect.
+# - `ls_mean` ranks first: a soft LP decision that also reflects how firm the decision is.
+# - `lp_margin_ratio` and `lp_margin_roll5` compare price with the LP's marginal cost, so the model refines near-ties instead of copying the schedule.
+# - `lp_sys_t` adds system state. `unit_index` and the other unit columns capture base rates and start order.
+# - `start_hours_wv` surprised me. I expected high start cost in hours to discourage running, but the next figure shows the opposite. High values occur when water value is near zero, so it seems to mark cheap water.
 #
-# Gain ranks `lp_u` and neighbouring `lp_u_*` high, since a few early splits with large gain sit on them, while `ls_mean` is used more consistently.
+# Gain ranks `lp_u` first, since a few early high-gain splits use it.
 
 # %%
 top = [str(x) for x in nm[S["top"]]]; show = ["ls_mean", "lp_margin_ratio", "lp_margin_roll5", "lp_sys_t", "lp_u", "start_hours_wv"]; fig, axs = plt.subplots(2, 3, figsize=(11, 5.4), gridspec_kw=dict(hspace=.35, wspace=.22))
@@ -469,12 +459,10 @@ for ax, n in zip(axs.ravel(), show):
 axs[0, 0].set_ylabel("SHAP, log-odds"); axs[1, 0].set_ylabel("SHAP, log-odds"); fig.suptitle("SHAP dependence and partial dependence", fontsize=11, fontweight="bold", x=.09, ha="left", y=.96); plt.show()
 
 # %% [markdown]
-# Most curves have the shape the physics predicts:
-# 
-# - `ls_mean` clusters near 0, 1/3, 2/3 and 1, since it is the mean of three mostly binary schedules, and each step up raises the odds of running. The largest step is from 1/3 to 2/3.
-# - `lp_margin_roll5` and `lp_margin_ratio` rise sharply where the price passes the LP's marginal cost (margin 0, ratio 1), then flatten. Far from that point, more margin tells the model little.
-# - `lp_sys_t` rises with total system output, and `lp_u` matters mostly in the range from off to partly on.
-# - The orange partial dependence is computed from 20 000 rows and agrees in direction with SHAP. They differ in size since partial dependence sweeps a feature alone, through combinations that do not occur in the data.
+# - `ls_mean` clusters near 0, 1/3, 2/3 and 1. Each step raises the odds, most from 1/3 to 2/3.
+# - `lp_margin_roll5` and `lp_margin_ratio` rise sharply where price passes the LP's marginal cost (margin 0, ratio 1), then flatten.
+# - `lp_sys_t` rises with system output. `lp_u` matters mostly between off and partly on.
+# - Partial dependence (orange, 20 000 rows) agrees with SHAP in direction. Sizes differ, since it sweeps one feature through combinations absent from the data.
 #
 # ### 8.2 Per-unit attribution
 
@@ -482,13 +470,13 @@ axs[0, 0].set_ylabel("SHAP, log-odds"); axs[1, 0].set_ylabel("SHAP, log-odds"); 
 un = S["unit"]; ks = [top.index(n) for n in top[:12]]; M = np.array([[np.abs(S["sv"][un == g_, k]).mean() for k in ks] for g_ in range(14)]); fig, ax = plt.subplots(figsize=(11, 4.6)); heat(ax, M, [top[k] for k in ks], UNITS, "Mean |SHAP| by unit and feature, top 12 features", fmt="{:.2f}"); ax.tick_params(axis="x", rotation=40); plt.setp(ax.get_xticklabels(), ha="right"); plt.show()
 
 # %% [markdown]
-# `ls_mean` leads for every unit with a similar size. The differences that stand out make sense: `unit_index` matters most for the last units in the start order (Tokke G4 0.78, Vinje G3 0.70), and `start_hours_wv` barely matters for Haukeli (0.11), which rarely switches.
+# `ls_mean` leads for every unit. `unit_index` matters most late in the start order (Tokke G4 0.78, Vinje G3 0.70). `start_hours_wv` barely matters for Haukeli (0.11), which rarely switches.
 #
 # ### 8.3 Permutation importance: trees, net and blend
 #
-# A fresh interpretation run (R24). Each (case, unit) gets its week-long feature track from another random (case, unit). The drop in AUC on 2022 is a sensitivity. Shuffled inputs are not physically consistent, so this is a stress as much as an explanation. Group rows are the mean of 3 shuffles.
+# Each (case, unit) receives its week-long feature track from another random (case, unit). Shuffled inputs are not physically consistent, so the AUC loss is a sensitivity. Groups use 3 shuffles.
 #
-# My hypothesis, written before running: both models lean mainly on the LP schedule, and the net loses more than the trees when market price columns are shuffled, because it has the absolute columns.
+# Hypothesis, logged before running: both models lean mainly on the LP schedule, and the net loses more than the trees when market columns are shuffled, because it has the absolute columns.
 
 # %%
 gi = pd.DataFrame(interp["group"]).T[["xgb", "net", "blend"]]; gi["columns"] = [len(G[k]) for k in gi.index]; print("Unshuffled AUC on 2022, seed 0:", {k: round(v, 5) for k, v in interp["base"].items()}); display(gi.sort_values("blend").round(5).rename_axis("Shuffled group"))
@@ -502,7 +490,7 @@ ax.set_yticks(yy, si.index); ax.grid(axis="y", visible=False); ax.set_xlabel("Lo
 # %% [markdown]
 # ### 8.4 One week, side by side
 #
-# A case with a median blend AUC. The figure compares SHOP's decision with the LP's relaxed schedule and with the out-of-fold blend, in a validation fold where the case was unseen.
+# A case with median blend AUC, unseen in its fold.
 
 # %%
 ca = np.array([auc(Y[k].ravel(), B[k].ravel()) if 0 < Y[k].mean() < 1 else np.nan for k in range(N_TR)]); k = int(np.nanargmin(np.abs(ca - np.nanmedian(ca)))); fig, axs = plt.subplots(4, 1, figsize=(11, 8), sharex=True, gridspec_kw=dict(hspace=.28, height_ratios=[1, 2, 2, 2]))
@@ -512,7 +500,7 @@ for ax, M, tt in ((axs[1], Y[k], "SHOP's decision (label)"), (axs[2], LPU[k], "L
 axs[3].set_xticks(range(0, 168, 24), [f"day {d + 1}" for d in range(7)]); plt.show()
 
 # %% [markdown]
-# This is the mechanism in one case. The LP has most of the week's plan without training: Tokke, Lio and Byrte are almost exactly right. It is wrong in places. It holds Hogga, Vinje and Haukeli off for the first day or more while SHOP runs them, and it switches Haukeli off late in day 7. The blend keeps the plan, moves toward SHOP in those places (Hogga and Vinje become uncertain instead of off, and Haukeli stays on), and partly picks up the short Kjela runs that the LP mostly misses. It also inherits LP errors: in days 5-7 it follows the LP's on/off pattern for Hogga, where SHOP simply stays on.
+# The LP gets most of the plan without training: Tokke, Lio and Byrte are almost exact. It wrongly holds Hogga, Vinje and Haukeli off for the first day or more, and switches Haukeli off late in day 7. The blend moves toward SHOP there and partly picks up the short Kjela runs. It also inherits LP errors: in days 5-7 it follows the LP's on/off pattern for Hogga, where SHOP stays on.
 
 # %% [markdown]
 # ## 9. Error analysis
@@ -536,7 +524,7 @@ print("Blend AUC per year:", {y: round(auc(Y[ytr == y], B[ytr == y]), 5) for y i
 # ## 10. Robustness
 # ### 10.1 Regime holdouts
 #
-# Train on one regime and test on another, on XGBoost. The LP's advantage should hold up when it has to extrapolate, since it has no trained parameters. Note that the test sets here overlap with years that were available when the LP was designed.
+# XGBoost trained on one regime and tested on another. The test sets overlap years available when the LP was designed.
 
 # %%
 rr = pd.read_csv("artifacts/robust_regime.csv").set_index("holdout"); rr.columns = ["n train", "n val", "No LP", "LP with prices", "LP, no prices", "LP alone (no training)"]; display(rr)
@@ -546,13 +534,13 @@ ax[0].axvline(300, color=MUTED, lw=.8); ax[0].text(320, ax[0].get_ylim()[0] + .0
 sz = rc["size"]; ax[1].plot([int(k) for k in sz], list(sz.values()), color=BLUE, marker="o", ms=5); ax[1].set_xlabel("Training years"); ax[1].set_ylabel("AUC on 2022"); ax[1].set_title("Five or seven years beat one to three"); plt.show()
 
 # %% [markdown]
-# - Without LP features, regime holdouts score 0.91-0.93. With them, they score 0.99. The gap is much larger than any model choice in Section 6.
-# - The rounds curve never falls: from 300 to 1200 it rises by at most 0.0002 to about 1000 rounds. There is no overfitting with rounds, and 300 is if anything slightly underfit, but R13 showed more rounds is inside noise.
-# - Five or seven training years beat one to three (0.9917 and 0.9923 against about 0.990), so the final models train on all 8.
+# - Holdouts score 0.91-0.93 without LP features and about 0.99 with them, a larger gap than any model choice in Section 6.
+# - Validation never falls with rounds. It gains about 0.0002 from 300 to 1200, and R13 found more rounds inside noise.
+# - Five or seven training years beat one to three (0.9917, 0.9923, about 0.990), so the final models train on all 8.
 #
 # ### 10.2 Stress tests
 #
-# Trained before 2022 and evaluated on half of 2022's cases. Inputs are perturbed, and **the LP is re-solved on the perturbed inputs**, so these reflect what the pipeline would actually do. Labels are unchanged, so a change here is a sensitivity and not a true score: at scaled inputs, SHOP's true decision may well differ.
+# Trained before 2022, tested on half of 2022's cases. Inputs are perturbed and **the LP is re-solved**. Labels stay fixed, so these are sensitivities, not scores: SHOP's true decision may change.
 
 # %%
 sf, sn = json.load(open("artifacts/stress_final.json")), json.load(open("artifacts/stress_noabs.json")); kk = ["scale_0.5", "scale_2", "scale_4", "price_noise", "negative_cheapest"]
@@ -562,43 +550,39 @@ print("Mean P(on) in the hours pushed negative: before", round(sf["negative_chea
 s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.reshape(725, 14, 168); P2 = P[N_TR:]; neg = np.broadcast_to(P2[:, None] < 0, T1.shape); print("\nOn the actual test set (no labels). Mean P(on) in negative-price hours:", round(T1[neg].mean(), 3), "| all other hours:", round(T1[~neg].mean(), 3), "| LP power fraction in negative hours:", round(LPF[N_TR:][neg].mean(), 3))
 
 # %% [markdown]
-# - **Scaling by 0.5, 2 or 4** barely moves the result, which is expected: scaled price and water value together leave the LP schedule almost unchanged, and it is the main input. The trees are close to scale-free, since most of their columns are ratios, ranks or LP output.
-# - **The earlier model E021a fell 0.0229 on negative prices** under the same perturbation, measured on all validation years. With the LP, the fall is 0.0072 on half of 2022. The test sets differ, so this is only indicative.
-# - **Negative prices stay the largest unknown.** Producing at a negative price costs money, and both the LP and the models react by switching off, with P(on) falling from 0.14 to 0.01. On the true test set, predicted P(on) in negative hours is 0.14 against 0.48 elsewhere. The direction is reasonable, but how strongly SHOP reacts cannot be verified. It may keep units on for flood, minimum flow or start cost reasons.
-# - **Price noise** costs 0.0075 because it really changes the economics. It is the least relevant of these, since SHOP and the features see exactly the same price in the real task.
+# - **Scaling** barely moves the result, since the LP schedule hardly changes.
+# - **Negative prices** are the largest unknown. The blend falls 0.0072. E021a fell 0.0229 under the same perturbation on different validation data, so the comparison is indicative. P(on) drops from 0.14 to 0.01. On the real test set, mean P(on) is 0.14 in negative hours and 0.48 elsewhere. The direction is reasonable, but SHOP's strength of reaction cannot be verified.
+# - **Price noise** costs 0.0075 but is the least relevant test, since SHOP and the features see the same price.
 #
-# **The hedge in notebook 2.** The hypothesis for notebook 1 is that the absolute price level helps the net (R6, R21). If the level misleads it in the test years, notebook 2 removes that risk: the blend takes less damage at x4 scaling (-0.00177 against -0.00231) and on negative prices (-0.00668 against -0.00722), for almost no cost in validation (LOYO -0.00001, forward 0.00000). Both are the same in the LP, so this hedge doesn't protect against the LP failing. I considered the older LP-free LightGBM (E026) as a hedge against that and rejected it: its LOYO is about 0.012 lower, and its predecessor E013 fell 0.029 on negative prices (indicative, as the test set differs).
+# **Hedge in notebook 2.** Notebook 1 assumes absolute price levels help the net (R6, R21). Notebook 2 removes them. The blend then loses less at x4 scaling (-0.00177 against -0.00231) and on negative prices (-0.00668 against -0.00722), at almost no validation cost (LOYO -0.00001, forward 0.00000). Both share the LP, so this does not protect against LP failure. I rejected LP-free E026 as that hedge: LOYO is about 0.012 lower, and its predecessor E013 fell 0.029 on negative prices (indicative).
 #
-# Public leaderboard: 0.99638 and 0.99635, in line with validation saying they are equal.
+# Public scores of 0.99638 and 0.99635 agree with validation.
 
 # %% [markdown]
-# ## 11. Reproducibility of the short notebooks
+# ## 11. Reproducibility
 #
-# Both notebooks are self-contained: all the code is inside, they start from the raw data, need no external data and run offline. They solve the LP in parallel on up to 4 cores with HiGHS and store the solutions in `work/`, so an interrupted run can resume.
+# Both notebooks contain all code, start from raw data, run offline and use no external data. LP solutions are stored in `work/`, so a run can resume. XGBoost and ST-Net each fall back to the CPU if the GPU fails.
 #
-# | Check | Notebook 1 | Notebook 2 |
-# |---|---|---|
-# | Empty directory, 4 cores, NVIDIA H100 | 50.6 min in total, LP 47.6 | 42.3 min in total, LP 39.2 |
-# | Peak memory (sampled every 15 s, excludes LP workers) | About 11 GB RAM, about 4 GB GPU | 10.6 GB RAM, about 4 GB GPU |
-# | XGBoost against research run | Identical logits | Identical logits |
-# | ST-Net against research run | Spearman 0.99999, largest logit difference 0.125 | Spearman 0.99999, largest logit difference 0.145 |
-# | LP schedules against research run | Identical | Not compared separately |
+# @@RUN_TABLE@@
 #
-# GPU training is not bit-exact, which explains the small net differences. They do not move the blend measurably.
+# GPU training is not bit-exact, which explains the small net differences.
 #
-# **Requirement of 12 hours, 4 CPU cores, 32 GB.** @@CPU_TEXT@@
+# **12 hours, 4 CPU cores, 32 GB.** @@CPU_TEXT@@
 #
-# The GPU is optional: the code uses bf16 autocast where available and falls back to float16 on an older GPU, or to CPU. The float16 and CPU paths were tested on random data at real shapes. A run on a real smaller GPU was not tested. Software versions are in `requirements.txt` (Python 3.12, PyTorch 2.6.0 with CUDA 12.4, XGBoost 3.4.1, SciPy 1.18.1 with HiGHS).
+# **GPU.** @@GPU_TEXT@@
+#
+# Versions are in `requirements.txt`: Python 3.12, PyTorch 2.6.0 with CUDA 12.4, XGBoost 3.4.1, SciPy 1.18.1 with HiGHS.
 
 # %% [markdown]
 # ## 12. Limitations
 #
-# - **No untouched holdout.** The structure of the LP (telescoping, head losses, priority order) was chosen by scoring it against labels from all training years. LOYO and forward scores are therefore somewhat optimistic for the LP-based models. The public leaderboard is the only independent check, and it agrees with the gain, but it was also consulted a few times.
-# - **Negative prices** are 2.2 % of test hours and nearly absent from training. They can't be validated with labels (Section 10.2). Also, negative hours by test year are 1.99 % for 2023 and 2.35 % for 2024, and I do not know the public/private split, so the private score may react differently.
-# - **Weakest units.** Vinje G3, Hogga and Kjela (Section 9). A likely reason is what the LP cannot represent: start costs and integer decisions at small margins. I did not establish this.
-# - **The LP's own simplifications.** Head is fixed within a week, efficiency is a concave approximation, and the commitment is relaxed. The ML models correct some of this, but only what the training regimes have shown.
-# - **Blend weight** is not nested for the final pair, though the validation is flat around it.
-# - **Interpretation.** SHAP explains the trees only. Permutation importance covers both, but a shuffle breaks physical consistency. Correlated features share credit, so individual rankings should be read loosely.
-# - **Runtime on a normal PC.** @@CPU_LIMIT@@
+# - **No untouched holdout.** The LP structure was chosen by scoring against labels from all training years, so LOYO and forward are somewhat optimistic for LP models. The public leaderboard is the only independent check, and it was consulted several times.
+# - **Negative prices** are 2.2 % of test hours (1.99 % in 2023, 2.35 % in 2024) and nearly absent from training. The public/private split is unknown, so the private score may react differently.
+# - **Weakest units:** Vinje G3, Hogga, Kjela. Start costs and integer decisions at small margins are a likely cause, but I did not establish this.
+# - **LP simplifications:** fixed head within a week, concave efficiency, relaxed commitment. The models correct only what training regimes show.
+# - **Blend weight:** not nested for the final pair.
+# - **Interpretation:** SHAP covers only the trees, shuffling breaks physical consistency, and correlated features share credit.
+# - **Runtime:** @@CPU_LIMIT@@
 #
-# **Tools.** Claude Code (an AI coding assistant) was used for writing and running code, analyses and drafting this report. All numbers come from logged runs, and hypotheses were written down before they were run.
+# **Tools:** Claude Code (an AI coding assistant) was used for code, analyses and drafting this report. Numbers come from logged runs.
+

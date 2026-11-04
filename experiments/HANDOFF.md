@@ -20,7 +20,7 @@ Read first: this file, `experiments/ledger.md` (R1-R17), the three task PDFs in 
 
 ## Next steps, in order
 1. Notebook 2 is done: same blend, ST-Net without absolute price columns (R23), `submission/Short_notebook_2.ipynb`, output `artifacts/submission_2.csv`, public LB 0.99635. Worst-case test without GPU, 4 cores, 32 GB: `slurm/nb1_cpu.sh`, results in `logs/nb1_cpu/`; update both notebook headers with the measured figures.
-2. Report: source `submission/build/report.py`, long text blocks in `submission/build/report_texts.py`, built and run by `submission/build/run_report.sh` (needs `/tmp/sintef_env_martnal/venv` on the node), output `logs/report/Report_exec.ipynb`, to be copied to `submission/Report.ipynb`. Waiting only on the CPU and P100 test figures (`CPU_TEXT`, `CPU_LIMIT`). Update notebook headers with the same figures.
+2. Report: source `submission/build/report.py`, long text blocks in `submission/build/report_texts.py`, built and run by `submission/build/build_report.py`, output `submission/Report.ipynb`. Waiting only on the CPU and P100 test figures (`CPU_TEXT`, `CPU_LIMIT`). Update notebook headers with the same figures.
 3. Deadline 2026-11-08 22:00 Oslo (strict): select 2 Kaggle predictions, deliver notebooks and report on Canvas.
 
 ## Known limitations to state honestly
