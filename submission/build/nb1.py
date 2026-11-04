@@ -618,16 +618,25 @@ print("features: trees", len(tree_keep), "net", len(net_keep))
 # %%
 t0 = time.time()
 X = X_ALL[..., tree_keep]; tree_names = [NAMES[i] for i in tree_keep]
-XGB_PARAMS = dict(objective="binary:logistic", device=DEVICE, tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0,
+XGB_PARAMS = dict(objective="binary:logistic", tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0,
                   min_child_weight=50., subsample=.5, colsample_bytree=.8, reg_lambda=1., max_bin=255, verbosity=0, nthread=N_CORES)
 dtrain = xgb.DMatrix(X[:N_TRAIN].reshape(-1, X.shape[-1]), label=Y.reshape(-1), feature_names=tree_names)
 dtest = xgb.DMatrix(X[N_TRAIN:].reshape(-1, X.shape[-1]), feature_names=tree_names)
+tree_device = DEVICE
+def tree_seed(seed, device):
+    m = xgb.train({**XGB_PARAMS, "device": device, "seed": seed}, dtrain, num_boost_round=300)
+    return m.predict(dtest, output_margin=True).reshape(-1, 14, 168)
 tree_preds = []
 for s in TREE_SEEDS:
-    m = xgb.train({**XGB_PARAMS, "seed": s}, dtrain, num_boost_round=300)
-    tree_preds.append(m.predict(dtest, output_margin=True).reshape(-1, 14, 168)); print("xgb seed", s, round(time.time() - t0), "s", flush=True)
+    try:
+        tree_preds.append(tree_seed(s, tree_device))
+    except xgb.core.XGBoostError as e:  # XGBoost's GPU build does not run on older GPUs, and a small GPU can run out of memory
+        if tree_device == "cpu": raise
+        print("XGBoost cannot use this GPU, using the CPU:", str(e).strip().split("\n")[0][:120], flush=True)
+        tree_device = "cpu"; tree_preds.append(tree_seed(s, tree_device))
+    print("xgb seed", s, tree_device, round(time.time() - t0), "s", flush=True)
 tree_logit = np.mean(tree_preds, 0)
-del dtrain, dtest, X, m
+del dtrain, dtest, X
 TIMES["xgboost"] = time.time() - t0
 
 # %% [markdown]
@@ -697,12 +706,18 @@ t0 = time.time()
 X = X_ALL[..., net_keep]; del X_ALL
 mean_, std_ = X[:N_TRAIN].mean((0, 1, 2)), X[:N_TRAIN].std((0, 1, 2)); std_ = np.where(std_ > 1e-6, std_, 1.)
 scaled = lambda x: torch.from_numpy(np.clip((x - mean_) / std_, -6, 6).astype(np.float32))
-Xtr = scaled(X[:N_TRAIN]).to(DEVICE); Ytr = torch.from_numpy(Y.astype(np.float32)).to(DEVICE); Xte = scaled(X[N_TRAIN:])
-net_preds = []
-for s in NET_SEEDS:
-    net_preds.append(predict_net(fit_net(Xtr, Ytr, s, NET_EPOCHS), Xte)); print("net seed", s, round(time.time() - t0), "s", flush=True)
-net_logit = np.mean(net_preds, 0)
-gpu_peak = torch.cuda.max_memory_reserved() / 2**30 if DEVICE == "cuda" else 0.
+def train_nets():
+    Xtr = scaled(X[:N_TRAIN]).to(DEVICE); Ytr = torch.from_numpy(Y.astype(np.float32)).to(DEVICE); Xte = scaled(X[N_TRAIN:]); preds = []
+    for s in NET_SEEDS:
+        preds.append(predict_net(fit_net(Xtr, Ytr, s, NET_EPOCHS), Xte)); print("net seed", s, DEVICE, round(time.time() - t0), "s", flush=True)
+    return np.mean(preds, 0)
+try:
+    net_logit = train_nets()
+except RuntimeError as e:  # out of memory on a small GPU, or a GPU this PyTorch build does not support
+    if DEVICE != "cuda": raise
+    print("ST-Net cannot use this GPU, using the CPU:", str(e).strip().split("\n")[0][:120], flush=True)
+    torch.cuda.empty_cache(); DEVICE = "cpu"; net_logit = train_nets()
+gpu_peak = torch.cuda.max_memory_reserved() / 2**30 if torch.cuda.is_available() else 0.
 TIMES["st_net"] = time.time() - t0
 
 # %% [markdown]

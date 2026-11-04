@@ -111,3 +111,6 @@ The task PDF's text layer shows spaces, but the rendered names have underscores,
 
 ## Worst-case notebook test, result (2026-11-04)
 Job 25904586: notebook 1 from an empty directory, no GPU, 4 cores (Xeon Gold 6348, 2.6 GHz), 32 GB enforced by Slurm, succeeded. 170.9 minutes: LP 36.7, features 0.2, XGBoost 6.3, ST-Net 127.7. Slurm MaxRSS 18.5 GB. Earlier estimate of 4-5 hours was too high. Not bit-equal to the GPU run: against `artifacts/submission_1.csv` Spearman 0.99908, largest logit difference 1.26, 99th percentile 0.48. Trees alone Spearman 0.99858, net alone 0.99944, since XGBoost on CPU and float32 training differ from GPU. No score yet for this file: `logs/nb1_cpu/submission_1.csv`. A real 4-core laptop can be slower than this server CPU; that was not tested.
+
+## P100 test (2026-11-04)
+Job 25906288 on Tesla P100 16 GB failed after the LP: `XGBoostError: This program was not compiled for SM 60`. So the notebooks crash on old GPUs, and the earlier statement "a GPU with at least 6 GB is enough" was wrong. Fix in both notebooks: XGBoost and ST-Net each fall back to the CPU if the GPU fails, for an unsupported GPU or out of memory. No change to what runs on a working GPU. Rerun from an empty directory: both notebooks on H100 to confirm unchanged results, notebook 1 on P100 to test the fallback.
