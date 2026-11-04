@@ -108,3 +108,6 @@ Adversarial AUC, train vs test, without calendar and unit columns: with absolute
 
 ## Filenames and old GPU test (2026-11-04)
 The task PDF's text layer shows spaces, but the rendered names have underscores, so the notebooks are now `Short_notebook_1.ipynb` and `Short_notebook_2.ipynb`. Worst-case test without GPU: job 25904586, started under the old name, same content. Test on P100 16 GB: `slurm/nb1_p100.sh`, job 25906288, results in `logs/nb1_p100/`.
+
+## Worst-case notebook test, result (2026-11-04)
+Job 25904586: notebook 1 from an empty directory, no GPU, 4 cores (Xeon Gold 6348, 2.6 GHz), 32 GB enforced by Slurm, succeeded. 170.9 minutes: LP 36.7, features 0.2, XGBoost 6.3, ST-Net 127.7. Slurm MaxRSS 18.5 GB. Earlier estimate of 4-5 hours was too high. Not bit-equal to the GPU run: against `artifacts/submission_1.csv` Spearman 0.99908, largest logit difference 1.26, 99th percentile 0.48. Trees alone Spearman 0.99858, net alone 0.99944, since XGBoost on CPU and float32 training differ from GPU. No score yet for this file: `logs/nb1_cpu/submission_1.csv`. A real 4-core laptop can be slower than this server CPU; that was not tested.
