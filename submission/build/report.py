@@ -342,6 +342,7 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 # | E025 | Per-plant weights on E021a | 0.98604 | Rejected, below noise |
 # | E026 | LightGBM, whole-watercourse state | 0.98118 | Accepted alone. Rejected for notebook 2, about 0.012 below the final blend |
 # | E027 | E026 + ST-Net | 0.98608 | Below noise |
+# | - | E021a + LP logit (`lp_v3`, weight 0.5), no retraining | 0.98974 | First sign that the LP adds information. Replaced by LP features in the models |
 #
 # ### 6.2 Phase 2: with the LP
 #
