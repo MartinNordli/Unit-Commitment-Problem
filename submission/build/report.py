@@ -7,7 +7,7 @@
 # **Group:** 197  
 # **Course:** TDT4173 Modern Machine Learning in Practice
 #
-# Figures and computed tables come from the cells below, using the raw data and saved experiment results. Hand-written tables quote the experiment log.
+# Figures and computed tables come from the cells below, using the raw data and saved experiment results. Hand-written tables quote the experiment log. This notebook ran in my project directory and imports its helper modules, so it does not rerun from this file alone. The short notebooks are self-contained.
 #
 # ## Contents
 # 1. Summary
@@ -64,7 +64,7 @@ print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfin
 # %% [markdown]
 # ## 1. Summary
 #
-# I wrote a linear program (LP) of the whole watercourse, solved it three times per case with HiGHS, and gave the solutions to the models as features. The LP reads only the case inputs and the topology file and has no trained parameters. The models learn the gap between the LP and SHOP.
+# I wrote a linear program (LP) of the whole watercourse, solved it three times per case with HiGHS, and gave the solutions to the models as features. The LP reads the case inputs, the topology file and a start order among identical units taken from training labels. It has no other trained parameters. The models learn the gap between the LP and SHOP.
 #
 # | Submission | Model | LOYO AUC (2015-22) | Forward AUC (2019-22) | Public LB |
 # |---|---|---|---|---|
@@ -246,7 +246,7 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 #
 # $$\max \sum_t \lambda_t \sum_{g} P_{g,t} \; + \; \sum_r v_r V_{r,168} \; - \; \text{flow costs} \; - \; \text{switching costs}$$
 #
-# subject to water balance for all 17 reservoirs, volume bounds, minimum flow, minimum volume and relaxed commitment $u_{g,t}\in[0,1]$. Power is concave piecewise-linear in flow, built per unit from the YAML turbine and generator curves at the head implied by the start volume, including penstock and shared-tunnel losses. Head is fixed within the week. No labels or fitted parameters are used.
+# subject to water balance for all 17 reservoirs, volume bounds, minimum flow, minimum volume and relaxed commitment $u_{g,t}\in[0,1]$. Power is concave piecewise-linear in flow, built per unit from the YAML turbine and generator curves at the head implied by the start volume, including penstock and shared-tunnel losses. Head is fixed within the week. The only input taken from labels is the start order (3.2). Nothing is fitted, but LP versions were compared on labels (Section 12).
 #
 # **Telescoping water values** are the key decision. Water ending the week in reservoir $r$ is worth:
 #
@@ -334,6 +334,7 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 # | E019 | ST-Net: one token per (unit, hour), attention across units | 0.98199 (3-seed ensemble 0.98425) | Accepted. Alone beats E014 |
 # | E020 | Per-plant blend weights | 0.98345 | Passes, barely above noise |
 # | E021a | E013 + ST-Net, nested | **0.98584** | Best without LP. Public **0.98906** |
+# | E021b | E013 + ST-Net + UC-Net, nested | 0.98597 | Below noise, not used |
 # | - | Overlap smoothing across cases | 0.98151 | Rejected, worse in 8/8 |
 # | E022 | ST-Net, 3 other seeds | 0.98187 (3-seed ensemble 0.98407) | Six seeds add nothing measurable |
 # | E023 | ST-Net on E013 features | -0.00042 *tuning* | Rejected |
@@ -388,6 +389,8 @@ for lab, col in (("Without LP", BLUE), ("With LP", ORANGE), ("LP alone", YELLOW)
 ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not all 8 years, so not directly comparable with the others.")
 
 # %% [markdown]
+# **Forward-nested blends (R16):** XGBoost + net 0.99329, XGBoost + CatBoost + net 0.99334. Adding LightGBM or a net without prices did not help, so the final blend has two members.
+#
 # The final blend combines two predictor types: gradient-boosted trees and a neural network.
 #
 # **Proposed, not run:** (P1) pushing the cheapest training hours below zero with LP labels, and (P2) scaling price and water value together. Noise changes the correct label, rolling cases already act as time shifts, and LP-labelled cases lack the SHOP-minus-LP gap the models learn. P1 also cannot be validated, since validation years barely contain negative hours.
@@ -402,7 +405,8 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # | `learning_rate`, rounds | 0.08, 300 | From E000. R13 (0.04, 800) was inside noise |
 # | `max_leaves`, `grow_policy` | 63, lossguide | From E000. Optuna (E011) gave no gain outside its own folds, so I stopped tuning trees |
 # | `min_child_weight` | 50 | Rough counterpart to LightGBM's `min_data_in_leaf` of 500. Not tuned |
-# | `subsample`, `colsample_bytree`, `reg_lambda` | 0.5, 0.8, 1.0 | From E000. Not tuned |
+# | `subsample`, `colsample_bytree`, `reg_lambda`, `max_bin` | 0.5, 0.8, 1.0, 255 | From E000. Not tuned |
+# | `max_depth` | 0 (no limit) | `max_leaves` sets tree size under lossguide |
 # | Seeds | 3 | Seed std is 0.00003 LOYO, 0.00006-0.00009 forward (R1) |
 #
 # **ST-Net:** 70 features (`base,lp,ls`), one token per (unit, hour). Four blocks combine a dilated convolution over the week (dilation 1, 2, 4, 8, conditioned on a unit summary) with attention across units. One Transformer layer follows. The output enforces the start order from 3.2, and an auxiliary head predicts weekly on-share.
@@ -412,11 +416,21 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # | Epochs | 24 | Beats e12 on two seed sets, LOYO and forward (R20) |
 # | `d`, blocks, heads | 64, 4, 4 | Sized for repeated runs. d=96 was worse (R15, 1/4 years) |
 # | Dropout, weight decay | 0.1, 0.01 | From E019. Single-seed checks of alternatives (+0.00016, +0.0006) stayed below the 3-seed reference (+0.0012, R10) and were not repeated at 3 seeds, so these values are kept, not shown best |
-# | Learning rate, batch, EMA | 1e-3 with warmup and cosine decay, 32, 0.995 | From E008 and E019 |
+# | Learning rate, batch, EMA | 1e-3, 32, 0.995 | From E008 and E019 |
+# | Warmup, decay, gradient clip | 5 % of steps, cosine, norm 1.0 | From E008 |
+# | Input clipping | ±6 standard deviations | Set by hand. Not tuned |
 # | Aux weight | 0.3 | From E008 |
 # | Seeds | 3 | Seed sets differ by up to 0.00035 alone, but barely in the blend. Six add nothing (R14) |
 #
-# **LP:** YAML values where specified. Bypass cost swept over 10, 100, 1000 on the LP alone; 10, the documented value, was best. The ±10 % sensitivity scale was set in advance.
+# **LP:** flow costs, start costs, curves and bounds come from the YAML file.
+#
+# | Constant | Value | Origin |
+# |---|---|---|
+# | Bypass cost | 10 | YAML value. Swept over 10, 100, 1000 on the LP alone, and 10 was best |
+# | Curve segments per unit | 3 | Set by hand: keeps the start, the best-efficiency point and the end. Not swept |
+# | Two-way tunnels, Totak-Vaamarvatn and Bordalsvatn-Foersvatn | ±150, ±15 m3/s | Set by hand, since the YAML gives only a loss factor. Not swept |
+# | Minimum head difference for the Venemo-Totak tunnel limit | 0.5 m | Set by hand, keeps the limit above zero. Not swept |
+# | Sensitivity scale on water values | x0.9, x1.1 | Set before running. Not tuned |
 #
 # **Blend weight:** 0.7 trees, 0.3 net, fixed before the last round. Validation is flat (table below), and nested weights on an earlier model set were 0.65-0.70 in all folds. The weight is not nested for the final pair.
 
