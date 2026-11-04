@@ -114,3 +114,9 @@ Job 25904586: notebook 1 from an empty directory, no GPU, 4 cores (Xeon Gold 634
 
 ## P100 test (2026-11-04)
 Job 25906288 on Tesla P100 16 GB failed after the LP: `XGBoostError: This program was not compiled for SM 60`. So the notebooks crash on old GPUs, and the earlier statement "a GPU with at least 6 GB is enough" was wrong. Fix in both notebooks: XGBoost and ST-Net each fall back to the CPU if the GPU fails, for an unsupported GPU or out of memory. No change to what runs on a working GPU. Rerun from an empty directory: both notebooks on H100 to confirm unchanged results, notebook 1 on P100 to test the fallback.
+
+## Final notebook runs with GPU fallback (2026-11-04)
+Each run from an empty directory, 4 cores, 32 GB enforced by Slurm. Job 25907542 notebook 1 on H100: 40.1 minutes (LP 37.1, XGBoost 0.4, ST-Net 2.3), 16.8 GiB, ST-Net GPU 3.3 GiB. Job 25907543 notebook 2 on H100: 40.1 minutes, 16.7 GiB, GPU 3.2 GiB. Both submissions are byte-identical to `artifacts/submission_{1,2}.csv`, and XGBoost logits are identical to `XT_ls`. ST-Net differs from the research runs by at most 0.125 and 0.145, Spearman 0.99999. Job 25907541 notebook 1 on Tesla P100: 307.3 minutes (LP 62.3, XGBoost on CPU 7.1, ST-Net on GPU 237.5), 17.7 GiB, GPU 4.7 GiB, Spearman 0.99908 against the submitted file, largest blend logit difference 1.12. The XGBoost fallback worked. ST-Net was slower on the P100 than on 4 CPU cores (127.7 minutes); cause not investigated.
+Correction: Slurm MaxRSS is in KiB, so the CPU test's 18467136K is 17.6 GiB, not 18.5 GB as written above.
+The report's claim that GPU training is not bit-exact was removed, since it does not fit byte-identical reruns.
+Still running with the final code: 25912287 notebook 1 without GPU, 25912288 notebook 2 without GPU, 25912289 forced ST-Net GPU failure (memory fraction 0.002, 1 epoch, code path only, no prediction used).

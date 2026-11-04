@@ -580,7 +580,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 #
 # @@RUN_TABLE@@
 #
-# GPU training is not bit-exact, which explains the small net differences.
+# Reruns on the H100 reproduce both submitted files byte for byte. Other hardware changes the numbers slightly, and I have no public score for those files. Against the research scripts, the notebooks' XGBoost logits are identical, and ST-Net logits differ by at most 0.145 (Spearman 0.99999).
 #
 # **12 hours, 4 CPU cores, 32 GB.** @@CPU_TEXT@@
 #
