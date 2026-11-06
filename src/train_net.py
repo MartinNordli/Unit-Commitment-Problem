@@ -67,9 +67,9 @@ def predict(m, X, dev, bs=64):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(); A = p.add_argument
     A("--name"); A("--lp", default="lp_v2"); A("--groups", default="base,lp,lps"); A("--drop", default=""); A("--seeds", default="0"); A("--folds", default=""); A("--forward", action="store_true"); A("--test", action="store_true")
-    A("--epochs", type=int, default=24); A("--batch", type=int, default=32); A("--lr", type=float, default=1e-3); A("--wd", type=float, default=.01); A("--ema", type=float, default=.995); A("--aux", type=float, default=.3); A("--d", type=int, default=64); A("--blocks", type=int, default=4); A("--dropout", type=float, default=.1); A("--shuffle", action="store_true"); A("--test-only", action="store_true"); A("--sens", action="store_true")
+    A("--epochs", type=int, default=24); A("--batch", type=int, default=32); A("--lr", type=float, default=1e-3); A("--wd", type=float, default=.01); A("--ema", type=float, default=.995); A("--aux", type=float, default=.3); A("--d", type=int, default=64); A("--blocks", type=int, default=4); A("--dropout", type=float, default=.1); A("--shuffle", action="store_true"); A("--test-only", action="store_true"); A("--sens", action="store_true"); A("--sens-lp", default="lp4")
     a = p.parse_args(); dev = "cuda" if torch.cuda.is_available() else "cpu"; print(dev, vars(a), flush=True)
-    c = load_cases(); z = np.load(f"{ROOT}/artifacts/lp/{a.lp}.npz"); sens = [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)] if a.sens else None; X, names = build(c, z, None, sens)
+    c = load_cases(); z = np.load(f"{ROOT}/artifacts/lp/{a.lp}.npz"); sens = [np.load(f"{ROOT}/artifacts/lp/{a.sens_lp}_w{w}.npz") for w in (90, 110)] if a.sens else None; X, names = build(c, z, None, sens)
     keep = [i for i, n in enumerate(names) if group(n) in a.groups.split(",") and n not in a.drop.split(",") and n not in CATEGORICAL]; X = X[..., keep]; names = [names[i] for i in keep]; print(len(names), "features", flush=True)
     Y = c["Y"].astype(np.float32); Fo = forward_folds() if a.forward else folds()
     if a.shuffle: Y = Y[np.random.default_rng(0).permutation(len(Y))]

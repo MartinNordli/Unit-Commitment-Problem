@@ -8,6 +8,11 @@ only approximate.
 Maximise   sum_t price_t * P_t  +  sum_r value_r * V_r,end  -  flow costs  -  switching costs
 subject to reservoir balances, volume bounds, min flow, min volume, relaxed commitment u in [0, 1].
 
+v5 (river_cost="curve", int_units=("Lio_G1",)) adds two corrections toward what SHOP solves: the main rivers' flow cost
+curve is read as SHOP documents it (piecewise-constant marginal cost, y_i on [x_i, x_i+1)), and Lio's commitment is
+integer (it cannot cover the r_Vest_Vassdraget min flow below p_min). Lio's u is then fixed and the LP solved again for
+the duals. The defaults reproduce v4.
+
 P(Q) is a concave piecewise-linear curve per unit, built from the turbine and generator efficiency
 curves at the head implied by the start volume (head is held fixed within the week).
 """
@@ -224,6 +229,13 @@ class WeekLP:
         self.res_to_plant = {topo.plant_up[p][0]: p for p in topo.plant if p != "Songa"}
         self.vest_in_flows = [f for f in self.rivers if ("river", NODE_RIVER) in topo.edges.get(("river", f), [])]
         self.vest_in_plants = [p for p in topo.plant if ("river", NODE_RIVER) in topo.edges.get(("plant", p), [])]
+        # Convex flow cost curves: cost(F) = y_0 F + sum_k (y_k - y_k-1) max(0, F - x_k), one excess variable per kink
+        self.kinks = []
+        for f in self.rivers:
+            if "flow_cost_curve" in topo.riv[f]:
+                cx, cy = (np.asarray(topo.riv[f]["flow_cost_curve"][a], float) for a in ("x", "y"))
+                assert cx[0] == 0 and (np.diff(cy) >= 0).all(), f"{f}: flow cost curve must start at 0 and be convex"
+                self.kinks += [(f, cx[k], cy[k] - cy[k - 1]) for k in range(1, len(cx)) if cy[k] > cy[k - 1]]
 
     def _flow_dst(self, node):
         return self.topo._follow(node)
@@ -235,12 +247,20 @@ class WeekLP:
     def V(self, r, t): return self.iv + r * self.T + t
 
     def solve(self, price, inflow, vol0, wv_end, minflow, minvol, convention="global", value_scale=None,
-              startcost_scale=1.0, relaxed=True, time_limit=120.0, mip_gap=0.005, shared_loss="marginal", conv_mode="real", bypass_cost=None):
-        """price (T,), inflow dict name->(T,), vol0 dict, wv_end dict, minflow dict->(T,), minvol dict->(T,)."""
+              startcost_scale=1.0, relaxed=True, time_limit=120.0, mip_gap=0.005, shared_loss="marginal", conv_mode="real", bypass_cost=None,
+              river_cost="slope", int_units=(), int_gap=1e-6, int_time_limit=600.0):
+        """price (T,), inflow dict name->(T,), vol0 dict, wv_end dict, minflow dict->(T,), minvol dict->(T,).
+
+        river_cost: "slope" (v4) charges the first segment's slope of a flow cost curve at every flow; "curve" (v5) uses
+        the whole convex curve. int_units: units whose commitment is solved as integer first and then fixed (v5: Lio_G1).
+        """
         topo, T = self.topo, self.T
         nG = len(self.G)
-        c = np.zeros(self.n)
-        lb, ub = np.zeros(self.n), np.full(self.n, np.inf)
+        assert river_cost in ("slope", "curve"), river_cost
+        kinks = self.kinks if river_cost == "curve" else []
+        n = self.n + len(kinks) * T  # excess variables of the flow cost curves follow the v4 variables
+        c = np.zeros(n)
+        lb, ub = np.zeros(n), np.full(n, np.inf)
         ub[self.iu:self.iu + nG * T] = 1.0
         rows_eq, cols_eq, vals_eq, rhs_eq = [], [], [], []
         rows_in, cols_in, vals_in, rhs_in = [], [], [], []
@@ -298,10 +318,21 @@ class WeekLP:
                 c[i0:i0 + T] += bypass_cost if f.startswith("b_") and bypass_cost is not None else cost
             elif "flow_cost_curve" in info:
                 cx, cy = info["flow_cost_curve"]["x"], info["flow_cost_curve"]["y"]
-                # Slope over the range these rivers actually carry (0-40 m3/s).
-                c[i0:i0 + T] += float(cy[1] - cy[0]) / float(cx[1] - cx[0])
+                if river_cost == "curve":
+                    c[i0:i0 + T] += float(cy[0])  # marginal cost below the first kink; the kinks add the rest below
+                else:
+                    # v4: slope of the first segment, at every flow
+                    c[i0:i0 + T] += float(cy[1] - cy[0]) / float(cx[1] - cx[0])
             if "max_flow_const" in info:
                 ub[i0:i0 + T] = float(info["max_flow_const"])
+
+        # Excess over each kink: F - e <= x_k, e >= 0, cost = marginal cost increase at the kink
+        for j, (f, xk, inc) in enumerate(kinks):
+            i0 = self.n + j * T
+            c[i0:i0 + T] += inc
+            rr = np.arange(ni, ni + T)
+            rows_in += [rr, rr]; cols_in += [self.F(self.flows.index(f), 0) + Tidx, i0 + Tidx]; vals_in += [np.ones(T), -np.ones(T)]
+            rhs_in.append(np.full(T, xk)); ni += T
 
         # Reservoir balances (equality)
         res_in = {r: [] for r in self.R}
@@ -416,17 +447,31 @@ class WeekLP:
                 values[r] *= value_scale[r]
             c[self.V(self.R.index(r), T - 1)] -= values[r]
 
-        Aeq = sp.csr_matrix((np.concatenate(vals_eq), (np.concatenate(rows_eq), np.concatenate(cols_eq))), shape=(ne, self.n))
-        Aub = sp.csr_matrix((np.concatenate(vals_in), (np.concatenate(rows_in), np.concatenate(cols_in))), shape=(ni, self.n))
+        Aeq = sp.csr_matrix((np.concatenate(vals_eq), (np.concatenate(rows_eq), np.concatenate(cols_eq))), shape=(ne, n))
+        Aub = sp.csr_matrix((np.concatenate(vals_in), (np.concatenate(rows_in), np.concatenate(cols_in))), shape=(ni, n))
+        A = dict(A_ub=Aub, b_ub=np.concatenate(rhs_in), A_eq=Aeq, b_eq=np.concatenate(rhs_eq), method="highs")
         kw = {}
         opts = {"time_limit": time_limit, "presolve": True}
         if not relaxed:
-            integ = np.zeros(self.n, dtype=np.uint8)
+            integ = np.zeros(n, dtype=np.uint8)
             integ[self.iu:self.iu + nG * T] = 1
             kw["integrality"] = integ
             opts["mip_rel_gap"] = mip_gap
-        res = linprog(c, A_ub=Aub, b_ub=np.concatenate(rhs_in), A_eq=Aeq, b_eq=np.concatenate(rhs_eq),
-                      bounds=np.c_[lb, ub], method="highs", options=opts, **kw)
+        int_status = -1
+        if relaxed and int_units:
+            # Integer commitment for these units only, then fix it so the LP below gives duals for that schedule.
+            integ = np.zeros(n, dtype=np.uint8)
+            for g in int_units:
+                integ[self.U(self.G.index(g), 0):self.U(self.G.index(g), 0) + T] = 1
+            r0 = linprog(c, bounds=np.c_[lb, ub], integrality=integ,
+                         options={"time_limit": int_time_limit, "presolve": True, "mip_rel_gap": int_gap}, **A)
+            if r0.x is None:
+                return dict(status=r0.status, message=r0.message)
+            int_status = r0.status
+            for g in int_units:
+                i0 = self.U(self.G.index(g), 0)
+                lb[i0:i0 + T] = ub[i0:i0 + T] = np.round(r0.x[i0:i0 + T])
+        res = linprog(c, bounds=np.c_[lb, ub], options=opts, **A, **kw)
         if res.x is None:
             return dict(status=res.status, message=res.message)
         x = res.x
@@ -447,4 +492,4 @@ class WeekLP:
         conv = np.array([conv_of(topo.gen_plant[g]) for g in self.G])
         flows = np.stack([x[self.F(f, 0):self.F(f, 0) + T] for f in range(len(self.flows))])
         return dict(status=res.status, obj=-res.fun, u=u, pfrac=pfrac, q=q, V=V, dual=dual, conv=conv, flows=flows,
-                    values=np.array([values[r] for r in self.R]), nit=res.nit)
+                    values=np.array([values[r] for r in self.R]), nit=res.nit, int_status=int_status)

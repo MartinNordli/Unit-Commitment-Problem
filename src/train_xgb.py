@@ -5,9 +5,9 @@ import numpy as np, xgboost as xgb
 from common import *
 from features import build, group
 a = argparse.ArgumentParser(); A = a.add_argument
-A("--name"); A("--lp", default="lp4_b10"); A("--groups", default="base,lp,lps,mf"); A("--drop", default=""); A("--seeds", default="0"); A("--rounds", type=int, default=300); A("--folds", default=""); A("--test", action="store_true"); A("--forward", action="store_true"); A("--test-only", action="store_true"); A("--pseudo", type=float, default=0.); A("--eta", type=float, default=.08); A("--leaves", type=int, default=63); A("--mcw", type=float, default=50.); A("--shuffle", action="store_true"); A("--sens", action="store_true")
+A("--name"); A("--lp", default="lp4_b10"); A("--groups", default="base,lp,lps,mf"); A("--drop", default=""); A("--seeds", default="0"); A("--rounds", type=int, default=300); A("--folds", default=""); A("--test", action="store_true"); A("--forward", action="store_true"); A("--test-only", action="store_true"); A("--pseudo", type=float, default=0.); A("--eta", type=float, default=.08); A("--leaves", type=int, default=63); A("--mcw", type=float, default=50.); A("--shuffle", action="store_true"); A("--sens", action="store_true"); A("--sens-lp", default="lp4")
 a = a.parse_args()
-c = load_cases(); sens = [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)] if a.sens else None
+c = load_cases(); sens = [np.load(f"{ROOT}/artifacts/lp/{a.sens_lp}_w{w}.npz") for w in (90, 110)] if a.sens else None
 X, names = build(c, np.load(f"{ROOT}/artifacts/lp/{a.lp}.npz"), None, sens)
 keep = [i for i, n in enumerate(names) if group(n) in a.groups.split(",") and n not in a.drop.split(",")]; X = X[..., keep]; names = [names[i] for i in keep]; print(len(names), "features", flush=True)
 Y = c["Y"]; F = forward_folds() if a.forward else folds()
