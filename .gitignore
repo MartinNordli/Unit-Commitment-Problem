@@ -9,3 +9,5 @@ prediction_mapping.csv
 schedule_visualization.ipynb
 .venv/
 catboost_info/
+slurm/
+experiments/HANDOFF.md
