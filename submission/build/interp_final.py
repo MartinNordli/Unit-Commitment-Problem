@@ -1,20 +1,23 @@
 """Report material: permutation importance for trees, net and blend, plus partial dependence for the trees."""
-import sys; sys.path.insert(0, "src"); sys.dont_write_bytecode = True
+import os, sys; sys.path.insert(0, "src"); sys.dont_write_bytecode = True
 import json, numpy as np, torch, xgboost as xgb
 from types import SimpleNamespace as NS
 from common import *
+DEV = os.environ.get("UC_DEVICE", "cuda")  # "cpu" when no supported GPU is available
+LP = os.environ.get("UC_LP", "lp5q")  # lp5q: LP v5 (x1.0, MIP gap 1e-4), with lp5q_w90 and lp5q_w110; lp4: the v4 files lp4_b10, lp4_w90, lp4_w110
+SUF = "" if LP == "lp5q" else "_" + LP
 from features import build, group, CATEGORICAL
 from train_net import fit, predict
 SCALE = open(f"{ROOT}/artifacts/scale_cols.txt").read().strip().split(",")
 c = load_cases(); Y = c["Y"].astype(np.float32); tr, va = forward_folds()[2022]
-X, names = build(c, np.load(f"{ROOT}/artifacts/lp/lp4_b10.npz"), None, [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)])
+X, names = build(c, np.load(f"{ROOT}/artifacts/lp/{LP if LP != 'lp4' else 'lp4_b10'}.npz"), None, [np.load(f"{ROOT}/artifacts/lp/{LP}_w{w}.npz") for w in (90, 110)])
 keep = [i for i, n in enumerate(names) if group(n) in ("base", "lp", "ls")]; X = X[..., keep]; names = [names[i] for i in keep]
 kt = [i for i, n in enumerate(names) if n not in SCALE]; kn = [i for i, n in enumerate(names) if n not in CATEGORICAL]
 print(len(names), len(kt), len(kn), flush=True)
-P = dict(objective="binary:logistic", device="cuda", tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0, min_child_weight=50., subsample=.5, colsample_bytree=.8, reg_lambda=1., max_bin=255, verbosity=0, seed=0)
+P = dict(objective="binary:logistic", device=DEV, tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0, min_child_weight=50., subsample=.5, colsample_bytree=.8, reg_lambda=1., max_bin=255, verbosity=0, seed=0)
 tn = [names[i] for i in kt]
 m = xgb.train(P, xgb.DMatrix(X[tr][..., kt].reshape(-1, len(kt)), label=Y[tr].reshape(-1), feature_names=tn), num_boost_round=300)
-dev = "cuda"; A = NS(d=64, blocks=4, dropout=.1, ema=.995, lr=1e-3, wd=.01, epochs=24, batch=32, aux=.3)
+dev = DEV; A = NS(d=64, blocks=4, dropout=.1, ema=.995, lr=1e-3, wd=.01, epochs=24, batch=32, aux=.3)
 Xn = X[..., kn]; mu = Xn[tr].mean((0, 1, 2)); sd = Xn[tr].std((0, 1, 2)); sd = np.where(sd > 1e-6, sd, 1.)
 sc = lambda x: torch.from_numpy(np.clip((x - mu) / sd, -6, 6).astype(np.float32))
 net = fit(sc(Xn[tr]).to(dev), torch.from_numpy(Y[tr]).to(dev), 0, A, dev); print("net trained", flush=True)
@@ -45,4 +48,4 @@ for n in ["lp_margin_ratio", "ls_mean", "lp_margin", "lp_u", "lp_sys_t", "margin
     for v in g:
         z = Xs.copy(); z[:, j] = v; y.append(float(m.predict(xgb.DMatrix(z, feature_names=tn), output_margin=True).mean()))
     pdp[n] = dict(x=g.tolist(), y=y)
-out["pdp"] = pdp; json.dump(out, open("artifacts/interp_final.json", "w")); print("saved", flush=True)
+out["pdp"] = pdp; json.dump(out, open(f"artifacts/interp_final{SUF}.json", "w")); print("saved", flush=True)

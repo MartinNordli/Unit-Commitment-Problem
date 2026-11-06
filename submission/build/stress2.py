@@ -7,17 +7,20 @@ import numpy as np, xgboost as xgb, torch
 from common import *
 from lp_surrogate import Topology, WeekLP
 from features import build, group
+DEV = os.environ.get("UC_DEVICE", "cuda")  # "cpu" when no supported GPU is available
+LP = os.environ.get("UC_LP", "lp5q")  # lp5q: LP v5 (x1.0, MIP gap 1e-4), with lp5q_w90 and lp5q_w110; lp4: the v4 files lp4_b10, lp4_w90, lp4_w110
+LPKW = dict(river_cost="curve", int_units=("Lio_G1",), int_gap=float(os.environ.get("UC_INT_GAP", "1e-4"))) if LP.startswith("lp5") else {}
 SCALE = open(f"{ROOT}/artifacts/scale_cols.txt").read().strip().split(",")
 _g = {}
 def init(): _g["lp"] = WeekLP(Topology(f"{ROOT}/data/extended/Tokke_Vinje_topology.yaml"))
 def solve(a):
     pr, q, v, w, mf, mv = a
-    r = _g["lp"].solve(pr.astype(float), {n: q[:, k].astype(float) for k, n in enumerate(INFLOW)}, {n: float(v[k]) for k, n in enumerate(RES)}, {n: float(w[k]) for k, n in enumerate(RES)}, {n: mf[:, k].astype(float) for k, n in enumerate(MINFLOW)}, {n: mv[:, k].astype(float) for k, n in enumerate(MINVOL)}, convention="telescoping")
+    r = _g["lp"].solve(pr.astype(float), {n: q[:, k].astype(float) for k, n in enumerate(INFLOW)}, {n: float(v[k]) for k, n in enumerate(RES)}, {n: float(w[k]) for k, n in enumerate(RES)}, {n: mf[:, k].astype(float) for k, n in enumerate(MINFLOW)}, {n: mv[:, k].astype(float) for k, n in enumerate(MINVOL)}, convention="telescoping", **LPKW)
     return {k: r[k] for k in ("u", "pfrac", "V", "dual", "conv", "flows")}
 if __name__ == "__main__":
     c = load_cases(); Y = c["Y"].astype(np.float32); tr, va = forward_folds()[2022]; rng = np.random.default_rng(0); va = va[::2]; n = len(va)
-    Z = np.load(f"{ROOT}/artifacts/lp/lp4_b10.npz"); S_ = [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)]; Xa, names = build(c, Z, None, S_); k = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in SCALE]; kn = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in ("unit_id", "plant_id") and not (os.environ.get("NET_NOABS") and x in SCALE)]
-    dev = "cuda"; P = dict(objective="binary:logistic", device=dev, tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0, min_child_weight=50, subsample=.5, colsample_bytree=.8, reg_lambda=1., max_bin=255, verbosity=0, seed=0)
+    Z = np.load(f"{ROOT}/artifacts/lp/{LP if LP != 'lp4' else 'lp4_b10'}.npz"); S_ = [np.load(f"{ROOT}/artifacts/lp/{LP}_w{w}.npz") for w in (90, 110)]; Xa, names = build(c, Z, None, S_); k = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in SCALE]; kn = [i for i, x in enumerate(names) if group(x) in ("base", "lp", "ls") and x not in ("unit_id", "plant_id") and not (os.environ.get("NET_NOABS") and x in SCALE)]
+    dev = DEV; P = dict(objective="binary:logistic", device=dev, tree_method="hist", eta=.08, grow_policy="lossguide", max_leaves=63, max_depth=0, min_child_weight=50, subsample=.5, colsample_bytree=.8, reg_lambda=1., max_bin=255, verbosity=0, seed=0)
     gb = xgb.train(P, xgb.DMatrix(Xa[tr][..., k].reshape(-1, len(k)), label=Y[tr].reshape(-1)), num_boost_round=300)
     import train_net as tn, argparse
     A = argparse.Namespace(d=64, blocks=4, dropout=.1, ema=.995, lr=1e-3, wd=.01, epochs=24, batch=32, aux=.3)

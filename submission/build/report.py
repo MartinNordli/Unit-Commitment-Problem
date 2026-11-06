@@ -110,7 +110,7 @@ ax.set_title("How a prediction is made"); plt.show()
 # - **Test data:** 725 cases from 2023-01-01 to 2024-12-25, without labels. The test period comes after all training data, so the models must work in years they have never seen.
 # - **Inputs per case:** hourly electricity prices and inflows, reservoir volumes at the start, water values at the end of the week, minimum flow and volume rules, and the system's topology (which reservoir drains through which plant into which reservoir).
 #
-# Grading uses the private leaderboard, which I cannot see. I therefore optimised for performance in new years, not for the public score.
+# Since grading is determined by the private leaderboard score, which I cannot see, I optimised for performance in new years, not for the public score.
 #
 # **Key terms used in the report**
 #
@@ -134,7 +134,7 @@ ax.set_title("How a prediction is made"); plt.show()
 # %% [markdown]
 # ## 3. Exploratory data analysis
 #
-# The exploration had one goal: to understand what drives SHOP's decisions well enough to know what features could capture it. The six subsections follow the course's list of EDA items.
+# The main goal of the exploration was to understand what drives SHOP's decisions well enough to know what features could capture it. The six subsections follow the course's list of EDA items.
 #
 # ### 3.1 Search domain knowledge
 #
@@ -177,7 +177,7 @@ for a, b in [("Vinje_G1", "Vinje_G2"), ("Vinje_G2", "Vinje_G3"), ("Tokke_G1", "T
 # %% [markdown]
 # ### 3.3 Check if the data is intuitive
 #
-# If my understanding from 3.1 is right, two things should hold: units should run when the price is above the water value, and the share of units running should follow the market. The figures below test both.
+# Based on my findings from 3.1, two things should hold: units should run when the price is above the water value, and the share of units running should follow the market. The figures below test both.
 
 # %%
 ri = {r: k for k, r in enumerate(RES)}; wk = np.arange(0, len(P), 7); dates = starts[wk]; wv = c["wv_end"]
@@ -200,13 +200,13 @@ fig.suptitle("Share of hours on against price minus upstream water value (EUR/MW
 display(pd.DataFrame(rowsT).round(2))
 
 # %% [markdown]
-# Mostly yes, with clear exceptions:
+# It holds true for the most part, but there are a few, clear exceptions:
 #
 # - **Price and water value move together.** Weekly mean price and mean water value correlate at 0.93 (top figure). A high price therefore does not by itself mean that a unit should run, because the water is then also worth more. This is why my features compare price with water value instead of using the price alone.
 # - **The margin "price minus water value" works.** In the 3x3 figure, the share of hours on rises sharply where the price passes the water value (margin 0). Byrte, Songa, Kjela and Vesle Kjela are close to clean on/off steps. Hogga, Tokke, Lio, Vinje and Haukeli still run 15-50 % of the time at strongly negative margins, probably because of minimum flow rules or water that would otherwise spill.
 # - **The table** estimates a rough price threshold for each week (midway between the median price when the unit is on and when it is off) and regresses it on the water values above and below the plant. The water value above gets the largest weight for every plant, but Vinje and Tokke also give weight to the one below. The estimate is crude, so I treated it only as a hint.
 #
-# **My first interpretation was wrong.** I first converted each reservoir's water value to money using only the plant directly below it, and then by adding up all plants down the cascade. An LP built on these readings reached AUC 0.606 and 0.743. A third reading, *telescoping* water values (explained in Section 5.1), reached 0.932. The documentation did not settle the question; only testing each reading against the labels did.
+# How to convert water values into money turned out to be less obvious than this suggests, and it mattered a great deal for the LP (Section 5.1).
 
 # %% [markdown]
 # ### 3.4 Explore individual features
@@ -298,7 +298,7 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 #
 # $$\underbrace{\sum_t \lambda_t \sum_g P_{g,t}}_{\text{income from selling power}} \; + \; \underbrace{\sum_r v_r V_{r,168}}_{\text{value of water left at the end}} \; - \; \text{flow costs} \; - \; \text{start costs}$$
 #
-# where $\lambda_t$ is the price in hour $t$, $P_{g,t}$ the power from unit $g$, $V_{r,168}$ the volume left in reservoir $r$ after the week and $v_r$ the value of that water. The water balance must hold in all 17 reservoirs every hour, together with volume limits, minimum flows and minimum volumes. For each unit, power is a concave piecewise-linear function of flow, built from the turbine and generator curves in the system's YAML file at the head given by the start volume, including losses in pipes and shared tunnels. Head is held fixed through the week.
+# where $\lambda_t$ is the price in hour $t$, $P_{g,t}$ the power from unit $g$, $V_{r,168}$ the volume left in reservoir $r$ after the week and $v_r$ the value of that water. The water balance must hold in all 17 reservoirs every hour, together with volume limits, minimum flows and minimum volumes. For each unit, power is a concave piecewise-linear function of flow, built from the turbine and generator curves in the system's YAML file at the head given by the start volume, including losses in pipes and shared tunnels. Head is held fixed through the week. Water sent down the four main rivers costs more per m3/s the more is sent, following the convex cost curve in the YAML file. One unit, Lio, gets a whole on/off decision (0 or 1); all other units keep values between 0 and 1 (see the end of this section).
 #
 # The LP has no trained parameters. The only thing taken from the labels is the start order of identical units (Section 3.2). I did, however, compare LP versions by scoring them against the labels, which is a form of selection (Section 12).
 #
@@ -319,11 +319,19 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 # | `lp_global` | Water valued with all plants down the cascade | 0.7431 | 0.7581 |
 # | `lp_tele` | Telescoping values | 0.9323 | 0.9470 |
 # | `lp_v2`, `lp_v3` | Curves per unit, head losses, start order | 0.9442, 0.9558 | 0.9561, 0.9688 |
-# | **`lp4_b10`, final** | Corrected Tokke start order, river costs, bypass cost 10 | **0.9576** | **0.9705** |
+# | `lp4_b10` | Corrected Tokke start order, river costs, bypass cost 10 | 0.9576 | 0.9705 |
 # | `lp4_b100`, `lp4_b1000` | Higher cost for water bypassing the plants | 0.9527, 0.9517 | 0.9656, 0.9646 |
 # | `milp_v2`, `mp4_b10` | Whole on/off decisions (integer program) on v2 and v4 | 0.9296, 0.9441 | 0.9445, 0.9606 |
+# | **`lp5q`, final (v5)** | Full river cost curve, whole on/off decisions for Lio only | **0.9574** | **0.9709** |
 #
-# Scores are on all 2922 training cases, with no model trained. The *power fraction* (power divided by maximum power) ranks a little better than the on/off value, so both are used as features. The telescoping step (0.743 to 0.932) is by far the largest. Forcing whole on/off decisions (an integer program, MILP) made the plan worse, and its features did not help the trees (L3). The final features use three solves per case: the water values as given, and scaled by 0.9 and 1.1 (Section 5.2).
+# Scores are on all 2922 training cases, with no model trained. The *power fraction* (power divided by maximum power) ranks a little better than the on/off value, so both are used as features. The telescoping step (0.743 to 0.932) is by far the largest. Forcing whole on/off decisions for all units (an integer program, MILP) made the plan worse, and its features did not help the trees (L3). The final features use three solves per case: the water values as given, and scaled by 0.9 and 1.1 (Section 5.2).
+
+**Version 5: two corrections found late.** Comparing the LP's plan with SHOP's unit by unit, two days before the deadline, showed two places where the LP solved a different problem from SHOP:
+
+1. *River costs.* The four main rivers have a flow cost curve in the YAML file. SHOP's documentation describes it as piecewise constant: the cost per m3/s is 1 up to 40 m3/s, 65 from 40 to 100, 239 from 100 to 200, and so on. Version 4 charged the first segment's slope (1.6) at every flow, so it sent more than 40 m3/s down the river below Hyljelihyl in 23 % of hours. Version 5 uses the whole curve, which brings this to 0.3 %.
+2. *Lio and the minimum flow.* Lio's water goes to `r_Vest_Vassdraget`, which has a minimum flow. With on/off relaxed, the LP met that minimum by running Lio partly "on" in 29 % of Lio's hours (the middle half of these values lie between 0.30 and 0.41), and in 87 % of those hours below Lio's minimum output of 14.8 MW. SHOP cannot do this. Version 5 makes Lio's 168 on/off values whole numbers, solves that small integer problem, fixes Lio's schedule and solves the LP again to get the shadow prices used as features.
+
+Version 5 ranks about as well as version 4 on its own (table above), but its weekly level is closer to SHOP's: the mean absolute error of each unit's weekly on-share falls from 0.044 to 0.037, and the share of correct hours rises from 0.943 to 0.952. Only Lio is made integer, because only Lio had this problem; the full MILP above made every unit integer and was worse. The integer step is solved to HiGHS's default relative gap of 0.01 %. Solving it to proven optimality was not practical: 4 of 3647 cases did not finish in 10 minutes, so the result would depend on the computer's speed (Section 11).
 #
 # The table below lists the feature groups of the final models. The six absolute price columns printed under it are used only by the neural network in notebook 1.
 
@@ -498,7 +506,7 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # | Auxiliary weight | 0.3 | From E008 |
 # | Seeds | 3 | Seed sets differ by up to 0.00035 alone, but barely in the blend. Six add nothing (R14) |
 #
-# **LP.** Flow costs, start costs, curves and limits come from the system's YAML file. The remaining constants:
+# **LP.** Flow costs, start costs, curves and limits come from the system's YAML file, including the main rivers' flow cost curves. The remaining constants:
 #
 # | Constant | Value | Origin |
 # |---|---|---|
@@ -507,6 +515,8 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # | Two-way tunnels, Totak-Vaamarvatn and Bordalsvatn-Foersvatn | ±150, ±15 m3/s | Set by hand, since the YAML gives only a loss factor. Not swept |
 # | Minimum head difference for the Venemo-Totak tunnel limit | 0.5 m | Set by hand, keeps the limit above zero. Not swept |
 # | Sensitivity scale on water values | x0.9, x1.1 | Set before running. Not tuned |
+# | Units with whole on/off decisions | Lio only | Found by comparing the LP's plan with the labels (Section 5.1). Not swept over other units |
+# | Relative gap of Lio's integer step | 0.01 % | HiGHS default. A tighter gap did not finish on 4 cases within 10 minutes (Section 5.1) |
 #
 # **Blend weight.** 0.7 for XGBoost and 0.3 for ST-Net, fixed before the last round of experiments. The table below shows that validation is flat between 0.6 and 0.8, and nested weights on an earlier set of models were 0.65-0.70 in every fold. The final weight itself was not chosen nested.
 

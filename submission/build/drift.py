@@ -1,16 +1,19 @@
 """Report material: adversarial validation, train years against test years. Alternating 60-day blocks, so overlapping cases stay together.
 Calendar columns are left out: with alternating blocks they let the classifier memorise which days are test, which pushes held-out AUC well below the real drift."""
-import sys; sys.path.insert(0, "src"); sys.dont_write_bytecode = True
+import os, sys; sys.path.insert(0, "src"); sys.dont_write_bytecode = True
 import json, numpy as np, xgboost as xgb
 from common import *
+DEV = os.environ.get("UC_DEVICE", "cuda")  # "cpu" when no supported GPU is available
+LP = os.environ.get("UC_LP", "lp5q")  # lp5q: LP v5 (x1.0, MIP gap 1e-4), with lp5q_w90 and lp5q_w110; lp4: the v4 files lp4_b10, lp4_w90, lp4_w110
+SUF = "" if LP == "lp5q" else "_" + LP
 from features import build, group
 SCALE = open(f"{ROOT}/artifacts/scale_cols.txt").read().strip().split(",")
-c = load_cases(); X, names = build(c, np.load(f"{ROOT}/artifacts/lp/lp4_b10.npz"), None, [np.load(f"{ROOT}/artifacts/lp/lp4_w{w}.npz") for w in (90, 110)])
+c = load_cases(); X, names = build(c, np.load(f"{ROOT}/artifacts/lp/{LP if LP != 'lp4' else 'lp4_b10'}.npz"), None, [np.load(f"{ROOT}/artifacts/lp/{LP}_w{w}.npz") for w in (90, 110)])
 y = (np.arange(len(X)) >= 2922).astype(np.float32); block = (np.arange(len(X)) // 60) % 2
 CAL = {"hour_local", "weekday_local", "doy_sin", "doy_cos", "horizon_hour", "unit_id", "plant_id", "unit_index", "p_max", "start_per_mw"}
 names_ok = [n for n in names if group(n) in ("base", "lp", "ls") and n not in CAL]
 SETS = dict(with_absolute=names_ok, no_absolute=[n for n in names_ok if n not in SCALE], lp_only=[n for n in names_ok if group(n) in ("lp", "ls") and n not in SCALE], absolute_only=SCALE)
-P = dict(objective="binary:logistic", device="cuda", tree_method="hist", eta=.1, max_depth=6, subsample=.5, colsample_bytree=.8, verbosity=0, seed=0, scale_pos_weight=2922 / 725)
+P = dict(objective="binary:logistic", device=DEV, tree_method="hist", eta=.1, max_depth=6, subsample=.5, colsample_bytree=.8, verbosity=0, seed=0, scale_pos_weight=2922 / 725)
 rng = np.random.default_rng(0); out = {}
 for s, cols in SETS.items():
     k = [names.index(n) for n in cols]; R = []
@@ -20,4 +23,4 @@ for s, cols in SETS.items():
         m = xgb.train(P, xgb.DMatrix(A, label=L, feature_names=cols), num_boost_round=150)
         R.append(auc(np.broadcast_to(y[va][:, None, None], (len(va), 14, 168)), m.predict(xgb.DMatrix(X[va][..., k].reshape(-1, len(k)), feature_names=cols))))
     g = m.get_score(importance_type="gain"); out[s] = dict(n=len(cols), auc=float(np.mean(R)), top=sorted(g, key=g.get, reverse=True)[:6]); print(s, out[s], flush=True)
-json.dump(out, open("artifacts/drift.json", "w"))
+json.dump(out, open(f"artifacts/drift{SUF}.json", "w"))

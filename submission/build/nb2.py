@@ -104,6 +104,7 @@ print("cases", len(CASES["run_no"]), "train", len(CASES["Y"]))
 # ## 2. LP surrogate of the weekly schedule
 # Maximise market income plus the value of stored water at the end of the week, minus flow and switching costs, subject to the water balance of the whole cascade, min flow, min volume, and relaxed commitment `u` in [0, 1].
 # The value of a reservoir telescopes: its water value times the conversion of the first plant below, plus the value of the reservoir below that plant.
+# The main rivers' flow cost is the convex curve from the topology file. Lio's commitment is solved as integer first and then fixed, since a fractional Lio could cover the `r_Vest_Vassdraget` min flow below its minimum output, which SHOP cannot do.
 
 # %%
 M3S_TO_MM3H = 0.0036
@@ -114,6 +115,7 @@ LP_PRIORITY = PRIORITY + [("Tokke_G4", "Tokke_G2")]
 BIDIRECTIONAL = {"Totak_Vaamarvatn": 150.0, "Bordalsvatn_Foersvatn": 15.0}  # tunnels between lakes at the same level
 PLANT_ORDER = {"Tokke": ["Tokke_G1", "Tokke_G3", "Tokke_G4", "Tokke_G2"], "Vinje": ["Vinje_G1", "Vinje_G2", "Vinje_G3"]}
 NODE_RIVER = "r_Vest_Vassdraget"  # has its own inflow and min flow, passes everything on to Bandak
+INT_UNITS, INT_GAP, INT_TIME_LIMIT = ("Lio_G1",), @@INT_GAP@@, 600.0  # integer commitment, solved first and then fixed
 
 
 class Topology:
@@ -268,6 +270,13 @@ class WeekLP:
         self.songa_tunnels = [f for f in self.tunnels if ("plant", "Songa") in topo.edges.get(("tunnel", f), [])]
         self.vest_in_flows = [f for f in self.rivers if ("river", NODE_RIVER) in topo.edges.get(("river", f), [])]
         self.vest_in_plants = [p for p in topo.plant if ("river", NODE_RIVER) in topo.edges.get(("plant", p), [])]
+        # Convex flow cost curves: cost(F) = y_0 F + sum_k (y_k - y_k-1) max(0, F - x_k), one excess variable per kink
+        self.kinks = []
+        for f in self.rivers:
+            if "flow_cost_curve" in topo.riv[f]:
+                cx, cy = (np.asarray(topo.riv[f]["flow_cost_curve"][a], float) for a in ("x", "y"))
+                assert cx[0] == 0 and (np.diff(cy) >= 0).all(), f"{f}: flow cost curve must start at 0 and be convex"
+                self.kinks += [(f, cx[k], cy[k] - cy[k - 1]) for k in range(1, len(cx)) if cy[k] > cy[k - 1]]
 
     def U(self, g, t): return self.iu + g * self.T + t
     def SW(self, g, t): return self.isw + g * self.T + t
@@ -278,8 +287,9 @@ class WeekLP:
     def solve(self, price, inflow, vol0, wv_end, minflow, minvol):
         topo, T = self.topo, self.T
         nG = len(self.G)
-        c = np.zeros(self.n)
-        lb, ub = np.zeros(self.n), np.full(self.n, np.inf)
+        n = self.n + len(self.kinks) * T  # excess variables of the flow cost curves come last
+        c = np.zeros(n)
+        lb, ub = np.zeros(n), np.full(n, np.inf)
         ub[self.iu:self.iu + nG * T] = 1.0
         rows_eq, cols_eq, vals_eq, rhs_eq = [], [], [], []
         rows_in, cols_in, vals_in, rhs_in = [], [], [], []
@@ -332,10 +342,16 @@ class WeekLP:
             if "flow_cost_const" in info:
                 c[i0:i0 + T] += float(info["flow_cost_const"])
             elif "flow_cost_curve" in info:
-                cx, cy = info["flow_cost_curve"]["x"], info["flow_cost_curve"]["y"]
-                c[i0:i0 + T] += float(cy[1] - cy[0]) / float(cx[1] - cx[0])  # slope over the range these rivers carry
+                c[i0:i0 + T] += float(info["flow_cost_curve"]["y"][0])  # marginal cost below the first kink
             if "max_flow_const" in info:
                 ub[i0:i0 + T] = float(info["max_flow_const"])
+        # Excess over each kink: F - e <= x_k, e >= 0, cost = marginal cost increase at the kink
+        for j, (f, xk, inc) in enumerate(self.kinks):
+            i0 = self.n + j * T
+            c[i0:i0 + T] += inc
+            rr = np.arange(ni, ni + T)
+            rows_in += [rr, rr]; cols_in += [self.F(self.flows.index(f), 0) + Tidx, i0 + Tidx]; vals_in += [np.ones(T), -np.ones(T)]
+            rhs_in.append(np.full(T, xk)); ni += T
 
         # Reservoir balances
         res_in = {r: [] for r in self.R}
@@ -429,10 +445,19 @@ class WeekLP:
             if topo.first_below[r] is not None:
                 c[self.V(self.R.index(r), T - 1)] -= telescoped(r)
 
-        Aeq = sp.csr_matrix((np.concatenate(vals_eq), (np.concatenate(rows_eq), np.concatenate(cols_eq))), shape=(ne, self.n))
-        Aub = sp.csr_matrix((np.concatenate(vals_in), (np.concatenate(rows_in), np.concatenate(cols_in))), shape=(ni, self.n))
-        res = linprog(c, A_ub=Aub, b_ub=np.concatenate(rhs_in), A_eq=Aeq, b_eq=np.concatenate(rhs_eq), bounds=np.c_[lb, ub],
-                      method="highs", options={"time_limit": 120.0, "presolve": True})
+        Aeq = sp.csr_matrix((np.concatenate(vals_eq), (np.concatenate(rows_eq), np.concatenate(cols_eq))), shape=(ne, n))
+        Aub = sp.csr_matrix((np.concatenate(vals_in), (np.concatenate(rows_in), np.concatenate(cols_in))), shape=(ni, n))
+        A = dict(A_ub=Aub, b_ub=np.concatenate(rhs_in), A_eq=Aeq, b_eq=np.concatenate(rhs_eq), method="highs")
+        # Integer commitment for Lio, then fix it so the LP gives the duals of that schedule
+        integ = np.zeros(n, dtype=np.uint8)
+        for g in INT_UNITS:
+            integ[self.U(self.G.index(g), 0):self.U(self.G.index(g), 0) + T] = 1
+        r0 = linprog(c, bounds=np.c_[lb, ub], integrality=integ, options={"time_limit": INT_TIME_LIMIT, "presolve": True, "mip_rel_gap": INT_GAP}, **A)
+        assert r0.x is not None, r0.message
+        for g in INT_UNITS:
+            i0 = self.U(self.G.index(g), 0)
+            lb[i0:i0 + T] = ub[i0:i0 + T] = np.round(r0.x[i0:i0 + T])
+        res = linprog(c, bounds=np.c_[lb, ub], options={"time_limit": 120.0, "presolve": True}, **A)
         assert res.x is not None, res.message
         x = res.x
         u = np.stack([x[self.U(g, 0):self.U(g, 0) + T] for g in range(nG)])
