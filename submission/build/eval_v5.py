@@ -4,7 +4,9 @@ import json, numpy as np
 from common import load_cases, years, auc
 c = load_cases(); Y = c["Y"]; yr = years(c)[:2922]
 L = lambda d, n: np.load(f"artifacts/{d}/{n}.npy").astype(np.float64)
-PAIRS = {"xgb": (("XR_ls", "XR_ls_f"), ("XR5_ls", "XR5_ls_f")), "n6": (("N6_min", "N6f_min"), ("N6_v5", "N6f_v5")), "n7": (("N7_noabs", "N7f_noabs"), ("N7_v5", "N7f_v5"))}
+CPU = len(sys.argv) > 1 and sys.argv[1] == "cpu"  # the CPU runs train v4 and v5 the same way; the GPU runs compare with the v4 GPU runs
+PAIRS = ({"xgb": (("XRc_ls", "XRc_ls_f"), ("XR5c_ls", "XR5c_ls_f")), "n6": (("N6c_v4", "N6fc_v4"), ("N6c_v5", "N6fc_v5")), "n7": (("N7c_v4", "N7fc_v4"), ("N7c_v5", "N7fc_v5"))} if CPU else
+         {"xgb": (("XR_ls", "XR_ls_f"), ("XR5_ls", "XR5_ls_f")), "n6": (("N6_min", "N6f_min"), ("N6_v5", "N6f_v5")), "n7": (("N7_noabs", "N7f_noabs"), ("N7_v5", "N7f_v5"))})
 def score(p):
     ok = np.isfinite(p).all((1, 2)); ys = sorted(set(yr[ok]))
     return auc(Y[ok], p[ok]), {int(y): auc(Y[ok & (yr == y)], p[ok & (yr == y)]) for y in ys}
@@ -18,4 +20,4 @@ for view, k in (("loyo", 0), ("forward", 1)):
     for m in P: row(f"{m} {view}", *P[m])
     for net in ("n6", "n7"):
         row(f"blend x+{net} {view}", .7 * P["xgb"][0] + .3 * P[net][0], .7 * P["xgb"][1] + .3 * P[net][1])
-json.dump(out, open("artifacts/eval_v5.json", "w"), indent=1)
+json.dump(out, open(f"artifacts/eval_v5{'_cpu' if CPU else ''}.json", "w"), indent=1)
