@@ -1,4 +1,5 @@
-# Python 3.12. Reference run: Linux, NVIDIA GPU with CUDA 12.4 drivers. Torch wheel: https://download.pytorch.org/whl/cu124
+# Python 3.12. Reference runs: Linux, no GPU (Intel Xeon 6730P, 4 cores, 32 GB). The CUDA 12.4 torch wheel below also runs without a GPU.
+# The +cu124 wheel exists only for Linux and Windows on x86-64. On macOS, install torch==2.6.0 from PyPI instead; results may then differ slightly.
 --extra-index-url https://download.pytorch.org/whl/cu124
 numpy==2.5.4
 pandas==3.1.0

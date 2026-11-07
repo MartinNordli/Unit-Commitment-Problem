@@ -1,10 +1,10 @@
 # %% [markdown]
 # # Predicting hydropower unit commitment in Tokke-Vinje: project report
 #
-# **Name:** Martin Nordli Almenningen
-# **Student id:** 562274
-# **Kaggle team name:** [197] sur salamander
-# **Group:** 197
+# **Name:** Martin Nordli Almenningen  
+# **Student id:** 562274  
+# **Kaggle team name:** [197] sur salamander  
+# **Group:** 197  
 # **Course:** TDT4173 Modern Machine Learning in Practice
 #
 # The code cells produce the figures and computed tables from the raw data and the saved experiment results. Tables written by hand quote the experiment log. The notebook was run in my project directory and uses its helper modules, so it is a report to read, not a program to rerun. The two short notebooks are self-contained.
@@ -332,7 +332,7 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 #
 # **Version 5: two corrections found late.** Comparing the LP's plan with SHOP's unit by unit, two days before the deadline, showed two places where the LP solved a different problem from SHOP:
 #
-# 1. *River costs.* The four main rivers have a flow cost curve in the YAML file. SHOP's documentation describes it as piecewise constant: the cost per m3/s is 1 up to 40 m3/s, 65 from 40 to 100, 239 from 100 to 200, and so on. Version 4 charged the first segment's slope (1.6) at every flow, so it sent more than 40 m3/s down the river below Hyljelihyl in 23 % of hours. Version 5 uses the whole curve, which brings this to 0.3 %.
+# 1. *River costs.* The four main rivers have a flow cost curve in the YAML file. SHOP's documentation describes it as piecewise constant: the cost per m3/s is 1 up to 40 m3/s, 65 from 40 to 100, 239 from 100 to 200, and so on. Version 4 read the curve as a total cost and charged its first slope, (65 - 1) / 40 = 1.6 per m3/s, at every flow, so it sent more than 40 m3/s down the river below Hyljelihyl in 23 % of hours. Version 5 uses the whole curve, which brings this to 0.3 %.
 # 2. *Lio and the minimum flow.* Lio's water goes to `r_Vest_Vassdraget`, which has a minimum flow. With on/off relaxed, the LP met that minimum by running Lio partly "on" in 29 % of Lio's hours (the middle half of these values lie between 0.30 and 0.41), and in 87 % of those hours below Lio's minimum output of 14.8 MW. SHOP cannot do this. Version 5 makes Lio's 168 on/off values whole numbers, solves that small integer problem, fixes Lio's schedule and solves the LP again to get the shadow prices used as features.
 #
 # Version 5 ranks about as well as version 4 on its own (table above), but its weekly level is closer to SHOP's: the mean absolute error of each unit's weekly on-share falls from 0.044 to 0.037, and the share of correct hours rises from 0.943 to 0.952. Only Lio is made integer, because only Lio had this problem; the full MILP above made every unit integer and was worse. The integer step is solved to HiGHS's default relative gap of 0.01 %. Solving it to proven optimality was not practical: 4 of 3647 cases did not finish in 10 minutes, so the result would depend on the computer's speed (Section 11).
@@ -370,7 +370,7 @@ T = [("Add `ls_*` (trees)", "XR_ls", "XR_min", "XR_ls_f", "XR_min_f", "Accepted.
      ("Drop `lps_*` plant shares (trees)", "XR_nolps", "XR_ref", "XR_nolps_f", "XR_ref_f", "Inside noise, dropped for simplicity"),
      ("Drop both (trees)", "XR_min", "XR_ref", "XR_min_f", "XR_ref_f", "No change, 59 vs 72 features"),
      ("Keep absolute price columns (trees)", "XR_scale", "XR_ref", "XR_scale_f", "XR_ref_f", "Inside noise, so left out of the trees"),
-     ("Keep absolute price columns (net)", "N4_v4_scale", "N3_v4_mf", "N4f_e24_scale", "N3f3_e24", "Clear gain, kept in the net in notebook 1"),
+     ("Keep absolute price columns (net)", "N4_v4_scale", "N3_v4_mf", "N4f_e24_scale", "N3f3_e24", "Forward +0.0007 (mostly 2020), LOYO within net seed noise. Kept in the net in notebook 1"),
      ("`base,lp,ls` only (net)", "N6_min", "N4_v4_scale", "N6f_min", "N4f_e24_scale", "Accepted. 7/8 years, 4/4 forward"),
      ("Add `ls_*`, keep `mf_*`, `lps_*` (net)", "N5_ls", "N4_v4_scale", "N5f_ls", "N4f_e24_scale", "Fails, 4/8 years"),
      ("Drop absolute price columns again (net, hedge)", "N7_noabs", "N6_min", "N7f_noabs", "N6f_min", "Fails the gate by design. Used as the hedge in notebook 2"),
@@ -382,7 +382,7 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 # %% [markdown]
 # Two results surprised me:
 #
-# - **Absolute price levels help the network, not the trees.** I expected that removing them would help everywhere, since they are what drifts most between training and test years. For the trees they made no difference, so I left them out. For the neural network they raised forward AUC by 0.0007, mostly through 2020, so the network in notebook 1 keeps them. Notebook 2 hedges this decision.
+# - **Absolute price levels helped the network on LP v4, not the trees.** I expected that removing them would help everywhere, since they are what drifts most between training and test years. For the trees they made no difference, so I left them out. For the neural network they raised forward AUC by 0.0007, mostly through 2020, so the network in notebook 1 keeps them. The LOYO gain (+0.00023) was smaller than the network's seed noise (up to 0.00035, Section 7), so the evidence rests on forward validation. On LP v5 the difference is gone: without these columns the network scores 0.99366 against 0.99373 in LOYO and 0.99323 against 0.99307 in forward validation (Section 6.2). Notebook 2 hedges this decision.
 # - **Fewer columns helped the network.** Adding `ls_*` while keeping `mf_*` and `lps_*` failed for the network (4/8 years). Adding `ls_*` and removing those two passed clearly (+0.00064 LOYO, 7/8 years, 4/4 forward years). For the trees the two groups made no difference either way, so both final models use the smaller set `base,lp,ls`.
 #
 # **LP v5 helped every model.** The last three rows compare the same models on LP v5 and LP v4 (Section 5.1). No GPU was available in the last two days before the deadline, so both versions were trained on CPU nodes for this comparison. The CPU runs on LP v4 reproduce the earlier GPU runs within 0.00002, so the two sets are comparable. LP v5 raised XGBoost by 0.00040 (8/8 years), the network by 0.00041 and the hedge network by 0.00046, all passing the gate, and the notebook 1 blend from 0.99399 to 0.99430 in LOYO and from 0.99375 to 0.99404 in forward validation (3 of 4 years; 2019 fell by 0.00003). The LP's own AUC barely changed (0.9576 to 0.9574), so that number was a poor guide to which LP helps the models. The largest gains are for Kjela and Lio (Section 9).
@@ -516,7 +516,7 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # |---|---|---|
 # | Epochs | 24 | Beats 12 epochs on two seed sets, in LOYO and forward (R20) |
 # | `d`, blocks, heads | 64, 4, 4 | Sized for repeated runs. d=96 was worse (R15, 1/4 years) |
-# | Dropout, weight decay | 0.1, 0.01 | From E019. Two single-seed forward checks beat a single-seed run of these values: dropout 0.25 by +0.00016, and weight decay 0.1 with dropout 0.2 and 16 epochs by +0.0006. The same values with 3 seeds were +0.0012 above that run (R10), so neither check is a clear gain. Not repeated at 3 seeds, so these values are kept, not shown best |
+# | Dropout, weight decay | 0.1, 0.01 | From E019. Two alternatives were tried with one seed in forward validation: dropout 0.25 (+0.00016) and weight decay 0.1 with dropout 0.2 and 16 epochs (+0.0006), both against a one-seed run of the current values. That run was itself 0.0012 below the current values with 3 seeds (R10), so both gains are within seed noise. They were not repeated with 3 seeds, so the current values are kept, not shown to be best |
 # | Learning rate, batch, EMA | 1e-3, 32, 0.995 | From E008 and E019 |
 # | Warmup, decay, gradient clip | 5 % of steps, cosine, norm 1.0 | From E008 |
 # | Input clipping | ±6 standard deviations | Set by hand. Not tuned |
@@ -534,6 +534,9 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # | Sensitivity scale on water values | x0.9, x1.1 | Set before running. Not tuned |
 # | Units with whole on/off decisions | Lio only | Found by comparing the LP's plan with the labels (Section 5.1). Not swept over other units |
 # | Relative gap of Lio's integer step | 0.01 % | HiGHS default. A tighter gap did not finish on 4 cases within 10 minutes (Section 5.1) |
+# | Time limit per solve | 600 s for Lio's integer step, 120 s for the LP | Set by hand, far above normal solve times. Lio's integer step took at most 2 minutes and never reached its limit (Section 11) |
+# | Penalty for breaking a minimum volume | 500 000 EUR per Mm3 | Set by hand, far above any water value, so the LP breaks the rule only when it cannot be met. Not swept |
+# | Penalty for breaking a minimum flow | 2000 EUR per m3/s and hour | Set by hand. Not swept |
 #
 # **Blend weight.** 0.7 for XGBoost and 0.3 for ST-Net, fixed before the last round of experiments. The table below shows that validation is flat between 0.6 and 0.8, and nested weights on an earlier set of models were 0.65-0.70 in every fold. The final weight itself was not chosen nested.
 
@@ -693,7 +696,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # %% [markdown]
 # The table shows the change in AUC against the unperturbed inputs, and the share of the LP's decisions that changed.
 #
-# - **Scaling** prices and water values together barely changes the result up to x2, because the LP's plan hardly changes (0.8-1.7 % of its decisions). At x4 the blend loses 0.003.
+# - **Scaling** prices and water values together barely changes the result up to x2, because the LP's plan hardly changes (0.8-1.0 % of its decisions). At x4, 1.7 % of the LP's decisions change and the blend loses 0.003.
 # - **Negative prices are the largest unknown.** The blend loses 0.0055 AUC (0.0072 on LP v4). The best model without the LP (E021a) lost 0.0229 under the same change, on different validation data, so the comparison is only indicative. In the hours pushed below zero, the predicted probability of running falls from 0.14 to 0.01. On the real test set, the mean predicted probability is 0.14 in negative-price hours and 0.48 in other hours. The direction is sensible, since producing at a negative price costs money, but how strongly SHOP reacts cannot be checked without labels.
 # - **Price noise** costs 0.0069, but it is the least relevant test, because SHOP and the features always see the same price.
 #
@@ -735,7 +738,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1 for every unit except Lio. Vinje G3 is a known gap: in a quarter of the hours where the LP runs Vinje G3, SHOP runs only two Vinje units (25 % on both LP v4 and v5), and I could not find the cause. The models can only correct these simplifications where the training years show how.
 # - **Blend weight** not chosen nested for the final pair (Section 7).
 # - **Interpretation.** SHAP covers only the trees, shuffling breaks physical consistency, and correlated features share credit.
-# - **Runtime.** The slowest measured run of the final notebooks took 3 h 47 min, a factor of 3.2 below 12 hours. All runs used server CPUs, and a laptop can be slower.
+# - **Runtime.** The slowest measured run of the final notebooks took 3 h 47 min, a factor of 3.2 below 12 hours. All runs used server CPUs, and a laptop can be slower. On Windows, which cannot fork processes, the notebooks solve the LP on one core instead of four. Scaled from the runs above, that is about 7 hours for the LP and 9-10 hours in total. This is an estimate; I did not test it.
 # - **Training hardware.** The final comparison of LP v5 against v4 and the submitted files were trained on CPUs, because no GPU was available in the last two days. The CPU runs on LP v4 match the earlier GPU runs closely, so this should not change the conclusions.
 
 # %% [markdown]
