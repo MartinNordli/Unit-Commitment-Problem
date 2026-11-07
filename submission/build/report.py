@@ -96,7 +96,8 @@ ax.set_title("How a prediction is made"); plt.show()
 # |---|---|---|---|---|
 # | **Short notebook 1** | XGBoost + ST-Net on LP v5, blend 0.7/0.3 | **0.99430** | **0.99404** | **0.99651** |
 # | **Short notebook 2** | Same, but ST-Net does not see absolute price levels | 0.99430 | 0.99408 | 0.99649 |
-# | Same two on LP v4 | Submitted before LP v5 | 0.99400, 0.99399 | 0.99379, 0.99379 | 0.99638, 0.99635 |
+# | Notebook 1 v4 | Same as notebook 1, on LP v4 | 0.99400 | 0.99379 | 0.99638 |
+# | Notebook 2 v4 | Same as notebook 2, on LP v4 | 0.99399 | 0.99379 | 0.99635 |
 # | Earlier blend (B2) | 3 tree models + 2 ST-Nets | 0.99377 | - | 0.99626 |
 # | Best without the LP (E021a) | LightGBM + ST-Net | 0.98584 | - | 0.98906 |
 #

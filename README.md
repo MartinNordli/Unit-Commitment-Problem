@@ -10,7 +10,8 @@ Course project in TDT4173 Modern Machine Learning in Practice (NTNU, autumn 2026
 |---|---|---|---|
 | **XGBoost + ST-Net on LP v5 features** (final, notebook 1) | **0.99430** | **0.99404** | **0.99651** |
 | Same, network without absolute price levels (hedge, notebook 2) | 0.99430 | 0.99408 | 0.99649 |
-| The same two models on LP v4 | 0.99400, 0.99399 | 0.99379, 0.99379 | 0.99638, 0.99635 |
+| Notebook 1 v4: the same model on LP v4 | 0.99400 | 0.99379 | 0.99638 |
+| Notebook 2 v4: the same model on LP v4 | 0.99399 | 0.99379 | 0.99635 |
 | LightGBM + ST-Net, best without the LP | 0.98584 | - | 0.98906 |
 | LP v5 plan alone, no training | 0.9709 | - | - |
 | LightGBM, base features | 0.95515 | 0.94877 | - |
