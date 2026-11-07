@@ -75,7 +75,7 @@ print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfin
 #
 # **The idea.** Instead of leaving the logic to the model, I rebuilt a simplified version of SHOP's optimisation problem as a linear program (LP), solved it for every case, and gave its plan to the models as input features. The LP has no trained parameters; the only thing it takes from the labels is the order in which identical units start. On its own, its plan already reaches an AUC of 0.97. The machine-learning models then only have to learn where SHOP deviates from the simplified plan.
 #
-# **The result.** Adding the LP was by far the largest step in the project: the same LightGBM model went from 0.955 to 0.992. The final submission blends two different model types, XGBoost and a neural network (ST-Net), both built on the LP features. It reaches 0.9943 in cross-validation. Two days before the deadline I found and corrected two places where the LP solved a different problem from SHOP (LP v5, Section 5.1), which raised every model by about 0.0004.
+# **The result.** Adding the LP was by far the largest step in the project: the same LightGBM model went from 0.955 to 0.992. The final submission blends two different model types, XGBoost and a neural network (ST-Net), both built on the LP features. It reaches 0.9943 in cross-validation and 0.99651 on the public leaderboard. Two days before the deadline I found and corrected two places where the LP solved a different problem from SHOP (LP v5, Section 5.1): the cost of sending water down the main rivers, and the unit Lio running partly "on" to meet a minimum flow. This raised every model by about 0.0004 in cross-validation. The public score, which I saw only after accepting LP v5, rose from 0.99638 to 0.99651.
 
 # %%
 fig, ax = plt.subplots(figsize=(11, 2.9)); ax.set_xlim(0, 11.2); ax.set_ylim(.35, 2.85); ax.axis("off")
@@ -94,8 +94,8 @@ ax.set_title("How a prediction is made"); plt.show()
 # %% [markdown]
 # | Submission | Model | Cross-validation, LOYO (2015-22) | Forward validation (2019-22) | Public leaderboard |
 # |---|---|---|---|---|
-# | **Short notebook 1** | XGBoost + ST-Net on LP v5, blend 0.7/0.3 | **0.99430** | **0.99404** | @@PUB1@@ |
-# | **Short notebook 2** | Same, but ST-Net does not see absolute price levels | 0.99430 | 0.99408 | @@PUB2@@ |
+# | **Short notebook 1** | XGBoost + ST-Net on LP v5, blend 0.7/0.3 | **0.99430** | **0.99404** | **0.99651** |
+# | **Short notebook 2** | Same, but ST-Net does not see absolute price levels | 0.99430 | 0.99408 | 0.99649 |
 # | Same two on LP v4 | Submitted before LP v5 | 0.99400, 0.99399 | 0.99379, 0.99379 | 0.99638, 0.99635 |
 # | Earlier blend (B2) | 3 tree models + 2 ST-Nets | 0.99377 | - | 0.99626 |
 # | Best without the LP (E021a) | LightGBM + ST-Net | 0.98584 | - | 0.98906 |
@@ -385,6 +385,8 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 # - **Fewer columns helped the network.** Adding `ls_*` while keeping `mf_*` and `lps_*` failed for the network (4/8 years). Adding `ls_*` and removing those two passed clearly (+0.00064 LOYO, 7/8 years, 4/4 forward years). For the trees the two groups made no difference either way, so both final models use the smaller set `base,lp,ls`.
 #
 # **LP v5 helped every model.** The last three rows compare the same models on LP v5 and LP v4 (Section 5.1). No GPU was available in the last two days before the deadline, so both versions were trained on CPU nodes for this comparison. The CPU runs on LP v4 reproduce the earlier GPU runs within 0.00002, so the two sets are comparable. LP v5 raised XGBoost by 0.00040 (8/8 years), the network by 0.00041 and the hedge network by 0.00046, all passing the gate, and the notebook 1 blend from 0.99399 to 0.99430 in LOYO and from 0.99375 to 0.99404 in forward validation (3 of 4 years; 2019 fell by 0.00003). The LP's own AUC barely changed (0.9576 to 0.9574), so that number was a poor guide to which LP helps the models. The largest gains are for Kjela and Lio (Section 9).
+#
+# **The public leaderboard agreed.** I accepted LP v5 by the rule above before the new files were submitted. Their public scores came afterwards: notebook 1 rose from 0.99638 to 0.99651 and notebook 2 from 0.99635 to 0.99649. That gain (+0.00013 and +0.00014) is smaller than in validation (about +0.0003), but in the same direction, on test years the LP's design never saw.
 
 # %% [markdown]
 # ## 6. All models and algorithms tried
@@ -696,7 +698,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 #
 # **Why notebook 2 exists.** Notebook 1 bets that absolute price levels help the network (R6, R21). If the test years' price levels mislead it, that bet loses. Notebook 2 removes these columns from the network too, so no part of the model reads the price level directly. Under the stress tests it holds up somewhat better: the blend loses 0.00260 instead of 0.00287 when prices are scaled x4, and 0.00512 instead of 0.00552 with negative prices. It costs nothing in validation on LP v5 (LOYO 0.99430 for both, forward 0.99408 against 0.99404). Both notebooks share the LP, so this hedge does not protect against the LP itself failing. I considered a model without the LP (E026) as the hedge instead, but rejected it: its LOYO is about 0.012 lower, and its predecessor E013 lost 0.029 with negative prices (indicative).
 #
-# On LP v4 the public leaderboard agreed: 0.99638 for notebook 1 and 0.99635 for notebook 2. @@PUBTEXT@@
+# The public leaderboard agrees that the hedge costs almost nothing: 0.99649 for notebook 2 against 0.99651 for notebook 1 on LP v5, and 0.99635 against 0.99638 on LP v4.
 
 # %% [markdown]
 # ## 11. Reproducibility
@@ -711,11 +713,13 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # |---|---|---|---|---|---|---|---|
 # | Notebook 1 | No GPU, Xeon 6730P | 227 | 109 | 3.9 | 114 | 17.7 | Is the submitted file |
 # | Notebook 2 | No GPU, Xeon 6730P | 224 | 108 | 3.6 | 112 | 17.7 | Is the submitted file |
-@@RERUNROWS@@#
+# | Notebook 1, second run | No GPU, Xeon 6730P, another node | 206 | 107 | 4.9 | 94 | 17.7 | Byte-identical |
+# | Notebook 2, second run | No GPU, Xeon 6730P, same node | 224 | 116 | 3.9 | 104 | 17.7 | Byte-identical |
+#
 # Before LP v5, the same notebooks on LP v4 ran in 40 minutes on an H100 (LP 37), in 166 minutes without a GPU on a Xeon Gold 6348, and in 277-307 minutes on a node with a Tesla P100, all from an empty directory with the same limits.
 #
-# - **The LP gives the same result everywhere.** Each LP solve has a time limit, and a limit that is reached would make the result depend on the computer's speed, so I checked this directly: a second run of all 3647 cases on a different machine (Xeon Gold 6132) gave bit-identical schedules, shadow prices and flows. @@LPCHECK@@ No case reached a limit: the slowest of Lio's integer steps took 2 minutes against a limit of 10.
-# - **Same hardware gives the same file.** @@SAMEHW@@ Training on other hardware changes the predictions slightly: on LP v4, files from a GPU and from a CPU had rank correlation 0.999 with each other.
+# - **The LP gives the same result everywhere.** Each LP solve has a time limit, and a limit that is reached would make the result depend on the computer's speed, so I checked this directly: a second run of all 3647 cases on a different machine (Xeon Gold 6132) gave bit-identical schedules, shadow prices and flows. The LP solutions from the notebooks' own copy of the code, saved in the two second runs above, are bit-identical to them too, for all three solves of every case. No case reached a limit: the slowest of Lio's integer steps took 2 minutes against a limit of 10.
+# - **Same hardware gives the same file.** Each notebook was run a second time on the same CPU model, notebook 1 on another node, and both gave a byte-identical submission file. Training on other hardware changes the predictions slightly: on LP v4, files from a GPU and from a CPU had rank correlation 0.999 with each other.
 # - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU: the slowest run took 3 h 47 min and used 17.7 GiB. The LP stage takes about 3 times as long as on LP v4 (109 against 37 minutes) because of Lio's integer step.
 # - **GPU.** XGBoost 3.4.1 does not support the Tesla P100 (`not compiled for SM 60`) or the V100 (SM 70), so it falls back to the CPU there. On LP v4 I tested the ST-Net fallback by limiting GPU memory until training ran out of it.
 #
@@ -724,7 +728,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # %% [markdown]
 # ## 12. Limitations
 #
-# - **No untouched holdout.** I chose the LP's structure, for example telescoping water values, by scoring versions against labels from all training years. The same holds for LP v5: I found its two corrections two days before the deadline by comparing the LP's plan with the labels unit by unit, and the choice of Lio as the only unit with whole on/off decisions came from that comparison. The LOYO and forward scores for models with the LP are therefore somewhat optimistic. The public leaderboard is the only fully independent check, and I looked at it several times, which weakens it a little too.
+# - **No untouched holdout.** I chose the LP's structure, for example telescoping water values, by scoring versions against labels from all training years. The same holds for LP v5: I found its two corrections two days before the deadline by comparing the LP's plan with the labels unit by unit, and the choice of Lio as the only unit with whole on/off decisions came from that comparison. The LOYO and forward scores for models with the LP are therefore somewhat optimistic. The public leaderboard is the only fully independent check, and I looked at it several times, which weakens it a little too. For LP v5 it is clean: the decision was fixed before the new files' public scores were known.
 # - **Negative prices** are 2.2 % of test hours (1.99 % in 2023, 2.35 % in 2024) but almost absent from training, so no model has learned how SHOP reacts to them. How these hours are split between the public and private test sets is unknown, so the private score may react differently from the public one.
 # - **Weakest units:** Vinje G3, Hogga and Kjela. Start costs and whole on/off decisions at small margins are a likely cause, but I did not establish this.
 # - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1 for every unit except Lio. Vinje G3 is a known gap: in a quarter of the hours where the LP runs Vinje G3, SHOP runs only two Vinje units (25 % on both LP v4 and v5), and I could not find the cause. The models can only correct these simplifications where the training years show how.
@@ -736,7 +740,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # %% [markdown]
 # ## 13. Conclusion
 #
-# The central finding is that the labels are best predicted by first solving a simplified version of the problem that produced them. A linear program of the water system, with no trained parameters, reached an AUC of 0.97 on its own. Given its plan as features, the models went from 0.986 (the best without the LP) to 0.994 in cross-validation. Under changed conditions, models with the LP held at about 0.99, while models without it scored 0.91-0.93.
+# The central finding is that the labels are best predicted by first solving a simplified version of the problem that produced them. A linear program of the water system, with no trained parameters, reached an AUC of 0.97 on its own. Given its plan as features, the models went from 0.986 (the best without the LP) to 0.994 in cross-validation, and from 0.98906 to 0.99651 on the public leaderboard. Under changed conditions, models with the LP held at about 0.99, while models without it scored 0.91-0.93.
 #
 # Three lessons stand out:
 #

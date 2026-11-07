@@ -8,14 +8,14 @@ Course project in TDT4173 Modern Machine Learning in Practice (NTNU, autumn 2026
 
 | Model | Cross-validation, leave one year out (2015-22) | Forward validation (2019-22) | Public leaderboard |
 |---|---|---|---|
-| **XGBoost + ST-Net on LP v5 features** (final, notebook 1) | **0.99430** | **0.99404** | @@PUB1@@ |
-| Same, network without absolute price levels (hedge, notebook 2) | 0.99430 | 0.99408 | @@PUB2@@ |
+| **XGBoost + ST-Net on LP v5 features** (final, notebook 1) | **0.99430** | **0.99404** | **0.99651** |
+| Same, network without absolute price levels (hedge, notebook 2) | 0.99430 | 0.99408 | 0.99649 |
 | The same two models on LP v4 | 0.99400, 0.99399 | 0.99379, 0.99379 | 0.99638, 0.99635 |
 | LightGBM + ST-Net, best without the LP | 0.98584 | - | 0.98906 |
 | LP v5 plan alone, no training | 0.9709 | - | - |
 | LightGBM, base features | 0.95515 | 0.94877 | - |
 
-Metric: micro-averaged ROC AUC over all unit-hours. Models were selected on cross-validation; the public leaderboard was only a sanity check.
+Metric: micro-averaged ROC AUC over all unit-hours. Models were selected on cross-validation; the public leaderboard was only a sanity check. LP v5 was accepted before its public scores were known, and they rose by 0.00013-0.00014 against LP v4.
 
 ![Cross-validated AUC of all main models](docs/img/models.png)
 
@@ -64,7 +64,7 @@ Learning adds most where the LP is weakest:
 
 ## Reproducing
 
-The competition data is not included. Place the raw files next to a short notebook (they are found by name in any subfolder) or set `UC_DATA_DIR`, install `submission/requirements.txt`, and run the notebook. Measured from an empty directory with 4 cores and a 32 GB limit: 40 minutes on an H100, under 3 hours without a GPU. On the same hardware the output is byte-identical to the submitted file.
+The competition data is not included. Place the raw files next to a short notebook (they are found by name in any subfolder) or set `UC_DATA_DIR`, install `submission/requirements.txt`, and run the notebook. Measured from an empty directory with 4 cores, a 32 GB limit and no GPU (Xeon 6730P): 3.4-3.8 hours and 17.7 GiB RAM, about half of it in the LP. A second run on the same CPU model gave a byte-identical file.
 
 ## Limitations
 
