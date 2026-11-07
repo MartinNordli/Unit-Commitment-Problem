@@ -59,9 +59,11 @@ c = load_cases(); Y = c["Y"]; P = c["price"]; yr = years(c); N_TR = 2922; ytr = 
 rows = {}
 for l in open("experiments.jsonl"):
     d = json.loads(l); rows[d["name"]] = d
-XT, NT = np.load("artifacts/oof/XR_ls.npy").astype(np.float64), np.load("artifacts/oof/N6_min.npy").astype(np.float64); B = .7 * XT + .3 * NT
-Z = np.load("artifacts/lp/lp4_b10.npz"); LPF = Z["pfrac"].astype(np.float64); LPU = Z["u"].astype(np.float64)
-XF, NF = np.load("artifacts/fwd/XR_ls_f.npy").astype(np.float64), np.load("artifacts/fwd/N6f_min.npy").astype(np.float64)
+# Final models: LP v5 (`lp5q`). The v4/v5 comparison was trained on CPU nodes for both LPs (Section 5.3).
+XT, NT = np.load("artifacts/oof/XR5c_ls.npy").astype(np.float64), np.load("artifacts/oof/N6c_v5.npy").astype(np.float64); B = .7 * XT + .3 * NT
+Z = np.load("artifacts/lp/lp5q.npz"); LPF = Z["pfrac"].astype(np.float64); LPU = Z["u"].astype(np.float64)
+XF, NF = np.load("artifacts/fwd/XR5c_ls_f.npy").astype(np.float64), np.load("artifacts/fwd/N6fc_v5.npy").astype(np.float64)
+B4 = .7 * np.load("artifacts/oof/XR_ls.npy").astype(np.float64) + .3 * np.load("artifacts/oof/N6_min.npy").astype(np.float64)  # final blend on LP v4, GPU
 print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfinite(XF).all((1, 2))], (.7 * XF + .3 * NF)[np.isfinite(XF).all((1, 2))]), 5))
 
 # %% [markdown]
@@ -73,7 +75,7 @@ print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfin
 #
 # **The idea.** Instead of leaving the logic to the model, I rebuilt a simplified version of SHOP's optimisation problem as a linear program (LP), solved it for every case, and gave its plan to the models as input features. The LP has no trained parameters; the only thing it takes from the labels is the order in which identical units start. On its own, its plan already reaches an AUC of 0.97. The machine-learning models then only have to learn where SHOP deviates from the simplified plan.
 #
-# **The result.** Adding the LP was by far the largest step in the project: the same LightGBM model went from 0.955 to 0.992. The final submission blends two different model types, XGBoost and a neural network (ST-Net), both built on the LP features. It reaches 0.994 in cross-validation and 0.99638 on the public leaderboard.
+# **The result.** Adding the LP was by far the largest step in the project: the same LightGBM model went from 0.955 to 0.992. The final submission blends two different model types, XGBoost and a neural network (ST-Net), both built on the LP features. It reaches 0.9943 in cross-validation. Two days before the deadline I found and corrected two places where the LP solved a different problem from SHOP (LP v5, Section 5.1), which raised every model by about 0.0004.
 
 # %%
 fig, ax = plt.subplots(figsize=(11, 2.9)); ax.set_xlim(0, 11.2); ax.set_ylim(.35, 2.85); ax.axis("off")
@@ -92,14 +94,15 @@ ax.set_title("How a prediction is made"); plt.show()
 # %% [markdown]
 # | Submission | Model | Cross-validation, LOYO (2015-22) | Forward validation (2019-22) | Public leaderboard |
 # |---|---|---|---|---|
-# | **Short notebook 1** | XGBoost + ST-Net, blend 0.7/0.3 | 0.99400 | 0.99379 | **0.99638** |
-# | **Short notebook 2** | Same, but ST-Net does not see absolute price levels | 0.99399 | 0.99379 | 0.99635 |
+# | **Short notebook 1** | XGBoost + ST-Net on LP v5, blend 0.7/0.3 | **0.99430** | **0.99404** | @@PUB1@@ |
+# | **Short notebook 2** | Same, but ST-Net does not see absolute price levels | 0.99430 | 0.99408 | @@PUB2@@ |
+# | Same two on LP v4 | Submitted before LP v5 | 0.99400, 0.99399 | 0.99379, 0.99379 | 0.99638, 0.99635 |
 # | Earlier blend (B2) | 3 tree models + 2 ST-Nets | 0.99377 | - | 0.99626 |
 # | Best without the LP (E021a) | LightGBM + ST-Net | 0.98584 | - | 0.98906 |
 #
-# The two submissions differ in one choice only. In notebook 1 the neural network sees absolute price levels; in notebook 2 it does not. Their test predictions are almost identical (rank correlation 0.99889). Notebook 2 is a hedge in case the price levels of 2023-24 mislead the network (Section 10.2). I chose models by cross-validation, not by the public leaderboard, since grading uses the private leaderboard.
+# The two submissions differ in one choice only. In notebook 1 the neural network sees absolute price levels; in notebook 2 it does not. Their test predictions are almost identical (rank correlation 0.99913). Notebook 2 is a hedge in case the price levels of 2023-24 mislead the network (Section 10.2). I chose models by cross-validation, not by the public leaderboard, since grading uses the private leaderboard.
 #
-# The most important limitation (Section 12): I chose the LP's design by checking it against labels from all training years, so no year is fully untouched, and the validation scores are probably slightly optimistic.
+# The most important limitation (Section 12): I chose the LP's design by checking it against labels from all training years, including the two corrections in LP v5, so no year is fully untouched, and the validation scores are probably slightly optimistic.
 
 # %% [markdown]
 # ## 2. The task and key terms
@@ -265,7 +268,7 @@ print("Reservoir fill, mean over days:", {k: round(float(v), 2) for k, v in zip(
 dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(auc=lambda d: d.auc.astype(float).round(3)).rename_axis("Feature set").rename(columns={"n": "columns", "auc": "adversarial AUC", "top": "most used columns"}))
 
 # %% [markdown]
-# No feature set comes close to 0.5: the test years are clearly different, so every model has to extrapolate. Without the absolute price columns the classifier's AUC falls from 0.953 to 0.921, and the LP columns alone give 0.869, the most similar between the two periods. A first version that included calendar columns gave impossible results (a larger feature set scoring below a subset of itself), which exposed the memorisation and led to the setup above. Drift did not decide anything by itself: the neural network kept the absolute price columns because validation favoured them (Section 5.3).
+# No feature set comes close to 0.5: the test years are clearly different, so every model has to extrapolate. Without the absolute price columns the classifier's AUC falls from 0.953 to 0.923, and the LP columns alone give 0.861, the most similar between the two periods. A first version that included calendar columns gave impossible results (a larger feature set scoring below a subset of itself), which exposed the memorisation and led to the setup above. Drift did not decide anything by itself: the neural network kept the absolute price columns because validation favoured them (Section 5.3).
 
 # %% [markdown]
 # ### 3.6 Clean up features
@@ -292,7 +295,7 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 # ## 5. Feature engineering
 # ### 5.1 Feature extraction: the LP surrogate
 #
-# **Why an LP.** SHOP's decisions depend on the whole system at once: if one plant runs, the reservoir below fills up, which changes what the next plant should do. Hand-made features can capture parts of this, and that is what I did first (Phase 1, Section 6.1), but each feature covers one relationship. An optimisation model captures all of them together. I therefore built a simplified version of SHOP's problem that can be solved in about a second: a *linear program* (LP), in which a unit's on/off decision may take any value between 0 and 1 instead of only 0 or 1. Its solution, the LP's plan, is given to the machine-learning models as features, and the models learn the difference between the simplified plan and SHOP's real one.
+# **Why an LP.** SHOP's decisions depend on the whole system at once: if one plant runs, the reservoir below fills up, which changes what the next plant should do. Hand-made features can capture parts of this, and that is what I did first (Phase 1, Section 6.1), but each feature covers one relationship. An optimisation model captures all of them together. I therefore built a simplified version of SHOP's problem that can be solved in a few seconds: a *linear program* (LP), in which a unit's on/off decision may take any value between 0 and 1 instead of only 0 or 1. Its solution, the LP's plan, is given to the machine-learning models as features, and the models learn the difference between the simplified plan and SHOP's real one.
 #
 # **What the LP solves.** For each case it maximises
 #
@@ -369,7 +372,10 @@ T = [("Add `ls_*` (trees)", "XR_ls", "XR_min", "XR_ls_f", "XR_min_f", "Accepted.
      ("Keep absolute price columns (net)", "N4_v4_scale", "N3_v4_mf", "N4f_e24_scale", "N3f3_e24", "Clear gain, kept in the net in notebook 1"),
      ("`base,lp,ls` only (net)", "N6_min", "N4_v4_scale", "N6f_min", "N4f_e24_scale", "Accepted. 7/8 years, 4/4 forward"),
      ("Add `ls_*`, keep `mf_*`, `lps_*` (net)", "N5_ls", "N4_v4_scale", "N5f_ls", "N4f_e24_scale", "Fails, 4/8 years"),
-     ("Drop absolute price columns again (net, hedge)", "N7_noabs", "N6_min", "N7f_noabs", "N6f_min", "Fails the gate by design. Used as the hedge in notebook 2")]
+     ("Drop absolute price columns again (net, hedge)", "N7_noabs", "N6_min", "N7f_noabs", "N6f_min", "Fails the gate by design. Used as the hedge in notebook 2"),
+     ("LP v5 instead of v4 (trees, CPU)", "XR5c_ls", "XRc_ls", "XR5c_ls_f", "XRc_ls_f", "Accepted. 8/8 years, 4/4 forward"),
+     ("LP v5 instead of v4 (net, CPU)", "N6c_v5", "N6c_v4", "N6fc_v5", "N6fc_v4", "Accepted. 7/8 years (2015 equal), 4/4 forward"),
+     ("LP v5 instead of v4 (net without absolute prices, CPU)", "N7c_v5", "N7c_v4", "N7fc_v5", "N7fc_v4", "Passes, 8/8 years, 4/4 forward. Hedge in notebook 2")]
 display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n]["oof_auc"] - rows[rf]["oof_auc"], "d forward": rows[nf]["oof_auc"] - rows[rff]["oof_auc"], "columns": rows[n].get("n_features"), "Decision": note} for a, n, rf, nf, rff, note in T]).round(5).set_index("Change"))
 
 # %% [markdown]
@@ -377,6 +383,8 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 #
 # - **Absolute price levels help the network, not the trees.** I expected that removing them would help everywhere, since they are what drifts most between training and test years. For the trees they made no difference, so I left them out. For the neural network they raised forward AUC by 0.0007, mostly through 2020, so the network in notebook 1 keeps them. Notebook 2 hedges this decision.
 # - **Fewer columns helped the network.** Adding `ls_*` while keeping `mf_*` and `lps_*` failed for the network (4/8 years). Adding `ls_*` and removing those two passed clearly (+0.00064 LOYO, 7/8 years, 4/4 forward years). For the trees the two groups made no difference either way, so both final models use the smaller set `base,lp,ls`.
+#
+# **LP v5 helped every model.** The last three rows compare the same models on LP v5 and LP v4 (Section 5.1). No GPU was available in the last two days before the deadline, so both versions were trained on CPU nodes for this comparison. The CPU runs on LP v4 reproduce the earlier GPU runs within 0.00002, so the two sets are comparable. LP v5 raised XGBoost by 0.00040 (8/8 years), the network by 0.00041 and the hedge network by 0.00046, all passing the gate, and the notebook 1 blend from 0.99399 to 0.99430 in LOYO and from 0.99375 to 0.99404 in forward validation (3 of 4 years; 2019 fell by 0.00003). The LP's own AUC barely changed (0.9576 to 0.9574), so that number was a poor guide to which LP helps the models. The largest gains are for Kjela and Lio (Section 9).
 
 # %% [markdown]
 # ## 6. All models and algorithms tried
@@ -450,20 +458,26 @@ DESC = [("L0_base", "L0_base_fwd", "LightGBM", "No LP, base features", "Referenc
     (None, "N11f_e16", "ST-Net", "e16", "Equal to e24 without prices. Not pursued"),
     (None, "N12f_d96", "ST-Net", "d=96 instead of 64", "Rejected, R15, 1/4 years"),
     ("N5_ls", "N5f_ls", "ST-Net", "Keep all + `ls_*`", "Gate fail, R19"),
-    ("N6_min", "N6f_min", "ST-Net", "`base,lp,ls`", "**Accepted. Final net, notebook 1**"),
-    ("N7_noabs", "N7f_noabs", "ST-Net", "`base,lp,ls`, no absolute prices", "**Hedge, notebook 2**"),
+    ("N6_min", "N6f_min", "ST-Net", "`base,lp,ls`", "Accepted. Final net on LP v4"),
+    ("N7_noabs", "N7f_noabs", "ST-Net", "`base,lp,ls`, no absolute prices", "Hedge on LP v4"),
     (None, "P1f_pseudo", "XGBoost", "Pseudo-labels from validation year", "Rejected, no gain over the same XGBoost without them (0.99297)"),
     ("XR_ref", "XR_ref_f", "XGBoost", "Clean reference, 72 columns, 5 seeds", "Gate reference, seed noise measured here"),
     ("XR_r800", "XR_r800_f", "XGBoost", "eta 0.04, 800 rounds", "Rejected, R13, inside noise"),
-    ("XR_ls", "XR_ls_f", "XGBoost", "`base,lp,ls`, no absolute prices", "**Accepted. Final trees**")]
+    ("XR_ls", "XR_ls_f", "XGBoost", "`base,lp,ls`, no absolute prices", "Accepted. Final trees on LP v4"),
+    ("XRc_ls", "XRc_ls_f", "XGBoost (CPU)", "As XR_ls, trained on CPU", "LP v4 reference for v5. Within 0.00002 of XR_ls"),
+    ("N6c_v4", "N6fc_v4", "ST-Net (CPU)", "As N6_min, trained on CPU", "LP v4 reference for v5. Within 0.00001 of N6_min"),
+    ("N7c_v4", "N7fc_v4", "ST-Net (CPU)", "As N7_noabs, trained on CPU", "LP v4 reference for v5. Equal to N7_noabs"),
+    ("XR5c_ls", "XR5c_ls_f", "XGBoost (CPU)", "`base,lp,ls` on LP v5", "**Accepted. Final trees**"),
+    ("N6c_v5", "N6fc_v5", "ST-Net (CPU)", "`base,lp,ls` on LP v5", "**Accepted. Final net, notebook 1**"),
+    ("N7c_v5", "N7fc_v5", "ST-Net (CPU)", "`base,lp,ls` on LP v5, no absolute prices", "**Hedge, notebook 2**")]
 tab = pd.DataFrame([dict(Model=m, Features=f, LOYO=rows[a]["oof_auc"] if a else np.nan, Forward=rows[b]["oof_auc"] if b else np.nan, Note=n) for a, b, m, f, n in DESC]).round(5); display(tab)
 
 # %% [markdown]
 # The figure below puts both phases on one axis.
 
 # %%
-pts = [("Logistic regression*", .89708, 0), ("Random forest*", .93927, 0), ("LightGBM, base (E000)", .95415, 0), ("LP alone, power fraction (no training)", auc(Y, LPF[:N_TR]), 2), ("UC-Net (E008)", .95893, 0), ("LightGBM, physics features (E009)", .96295, 0), ("LightGBM + neighbours (E013)", .97919, 0), ("LightGBM, whole system (E026)", .98118, 0), ("ST-Net (E019)", .98199, 0), ("LightGBM + UC-Net (E012)", .97847, 0), ("LightGBM + ST-Net (E021a)", .98584, 0),
-    ("LightGBM + LP v4", rows["L8_v4"]["oof_auc"], 1), ("CatBoost + LP v4", rows["C1_v4_mf"]["oof_auc"], 1), ("XGBoost + LP v4", rows["XR_ref"]["oof_auc"], 1), ("ST-Net + LP v4", rows["N4_v4_scale"]["oof_auc"], 1), ("XGBoost final trees", rows["XR_ls"]["oof_auc"], 1), ("ST-Net final", rows["N6_min"]["oof_auc"], 1), ("Blend B2", rows["B2_gbdt3_nn2_nested"]["oof_auc"], 1), ("Final blend, notebook 1", auc(Y, B), 1)]
+pts = [("Logistic regression*", .89708, 0), ("Random forest*", .93927, 0), ("LightGBM, base (E000)", .95415, 0), ("LP v5 alone, power fraction (no training)", auc(Y, LPF[:N_TR]), 2), ("UC-Net (E008)", .95893, 0), ("LightGBM, physics features (E009)", .96295, 0), ("LightGBM + neighbours (E013)", .97919, 0), ("LightGBM, whole system (E026)", .98118, 0), ("ST-Net (E019)", .98199, 0), ("LightGBM + UC-Net (E012)", .97847, 0), ("LightGBM + ST-Net (E021a)", .98584, 0),
+    ("LightGBM + LP v4", rows["L8_v4"]["oof_auc"], 1), ("CatBoost + LP v4", rows["C1_v4_mf"]["oof_auc"], 1), ("XGBoost + LP v4", rows["XR_ref"]["oof_auc"], 1), ("ST-Net + LP v4", rows["N4_v4_scale"]["oof_auc"], 1), ("XGBoost final trees, LP v5", rows["XR5c_ls"]["oof_auc"], 1), ("ST-Net final, LP v5", rows["N6c_v5"]["oof_auc"], 1), ("Blend B2", rows["B2_gbdt3_nn2_nested"]["oof_auc"], 1), ("Blend on LP v4", auc(Y, B4), 1), ("Final blend, notebook 1", auc(Y, B), 1)]
 pts = sorted(pts, key=lambda p: p[1]); cols = [BLUE, ORANGE, YELLOW]; fig, ax = plt.subplots(figsize=(9, 5.4))
 ax.hlines(range(len(pts)), .88, [p[1] for p in pts], color=GRID, lw=1); ax.scatter([p[1] for p in pts], range(len(pts)), s=42, c=[cols[p[2]] for p in pts], zorder=3, edgecolors="#fcfcfb", linewidths=1.5); ax.set_yticks(range(len(pts)), [p[0] for p in pts]); ax.set_xlim(.885, 1.0); ax.set_xlabel("Cross-validated AUC, LOYO"); ax.grid(axis="y", visible=False); ax.set_title("With the LP, every model scores above the best earlier blend")
 for k, p in enumerate(pts): ax.text(p[1] + .0015, k, f"{p[1]:.4f}", va="center", fontsize=7.5, color=MUTED)
@@ -534,7 +548,7 @@ print("Correlation between tree and net logits:", round(np.corrcoef(XT.ravel(), 
 # - **Partial dependence** (8.1): how the prediction changes on average when one feature is varied.
 # - **Permutation importance** (8.3): how much the score drops when a feature is scrambled. Computed for both models and the blend.
 #
-# Sections 8.1-8.3 use models trained before 2022 and explained on 2022, which they did not see, with seed 0. Section 8.4 uses the out-of-fold LOYO blend.
+# Sections 8.1-8.3 use models on LP v5, trained before 2022 on CPU and explained on 2022, which they did not see, with seed 0. Section 8.4 uses the out-of-fold LOYO blend.
 #
 # ### 8.1 SHAP on the trees
 
@@ -546,14 +560,14 @@ ax.legend(loc="lower right"); plt.show(); print("Share of total mean |SHAP| by g
 g_ = sj["gain"]; print("Top 8 by gain:", sorted(g_, key=g_.get, reverse=True)[:8])
 
 # %% [markdown]
-# LP features hold 77 % of the total attribution (LP schedule 55 %, LP sensitivity 22 %). The model builds on the LP's plan, as intended.
+# LP features hold 78 % of the total attribution (LP schedule 58 %, LP sensitivity 20 %). The model builds on the LP's plan, as intended.
 #
-# - **`ls_mean` ranks first by far.** It is the average of the three LP plans, so it says both what the LP decided and how firm the decision was: 1 means on in all three plans, and 1/3 or 2/3 means a near-tie.
+# - **`ls_mean` ranks first, followed by `lp_u_roll5`.** `ls_mean` is the average of the three LP plans, so it says both what the LP decided and how firm the decision was: 1 means on in all three plans, and 1/3 or 2/3 means a near-tie. `lp_u_roll5` is the LP's on/off value averaged over five hours, which also tells the model whether a switch is close.
 # - **`lp_margin_ratio` and `lp_margin_roll5`** compare the price with the LP's marginal cost. They let the model refine the decision near the tipping point instead of copying the LP's plan.
 # - **`lp_sys_t`** describes the state of the whole system. **`unit_index`** (the unit's place in the start order) and the other unit columns capture how often each unit runs and in which order identical units start.
 # - **`start_hours_wv` surprised me.** It is the start cost measured in hours of full production valued at the water value. I expected a high value to discourage starting, but the next figure shows the opposite. High values occur when the water value is close to zero, so the feature seems to mark cheap water rather than expensive starts.
 #
-# XGBoost's built-in importance (gain) ranks `lp_u` first instead, because a few early splits with large gain use it. SHAP measures the effect on every prediction, so I rely on SHAP.
+# XGBoost's built-in importance (gain) ranks `lp_u_roll5` and `lp_u` first instead, because a few early splits with large gain use them. SHAP measures the effect on every prediction, so I rely on SHAP.
 
 # %%
 top = [str(x) for x in nm[S["top"]]]; show = ["ls_mean", "lp_margin_ratio", "lp_margin_roll5", "lp_sys_t", "lp_u", "start_hours_wv"]; fig, axs = plt.subplots(2, 3, figsize=(11, 5.4), gridspec_kw=dict(hspace=.35, wspace=.22))
@@ -569,7 +583,7 @@ axs[0, 0].set_ylabel("SHAP, log-odds"); axs[1, 0].set_ylabel("SHAP, log-odds"); 
 #
 # - `ls_mean` takes the values 0, 1/3, 2/3 and 1. Each step raises the odds of running, most of all from 1/3 to 2/3, where the majority of the three LP plans switches from off to on.
 # - `lp_margin_ratio` and `lp_margin_roll5` rise steeply where the price passes the LP's marginal cost (ratio 1, margin 0). The model is most sensitive exactly at the LP's tipping point.
-# - `lp_sys_t` rises with total system output. `lp_u` matters mainly between off and partly on.
+# - `lp_sys_t` rises with total system output. `lp_u` itself has small effects (about ±0.1), since `lp_u_roll5` and `ls_mean` carry the same information.
 # - Partial dependence (computed on 20 000 rows) agrees with SHAP in direction. The sizes differ because partial dependence sets one feature to each value for all rows, which creates combinations that never occur in the data.
 #
 # ### 8.2 Per-unit attribution
@@ -580,7 +594,7 @@ axs[0, 0].set_ylabel("SHAP, log-odds"); axs[1, 0].set_ylabel("SHAP, log-odds"); 
 un = S["unit"]; ks = [top.index(n) for n in top[:12]]; M = np.array([[np.abs(S["sv"][un == g_, k]).mean() for k in ks] for g_ in range(14)]); fig, ax = plt.subplots(figsize=(11, 4.6)); heat(ax, M, [top[k] for k in ks], UNITS, "Mean |SHAP| by unit and feature, top 12 features", fmt="{:.2f}"); ax.tick_params(axis="x", rotation=40); plt.setp(ax.get_xticklabels(), ha="right"); plt.show()
 
 # %% [markdown]
-# Mostly yes. `ls_mean` is the most important feature for every unit. `unit_index` matters most for units late in the start order (Tokke G4 0.78, Vinje G3 0.70), which only run when the units ahead of them are already on. `start_hours_wv` matters least for Haukeli (0.11), which rarely switches (0.5 switches per week, Section 3.4).
+# Mostly yes. `ls_mean` is the most important feature for every unit. `unit_index` matters most for units late in the start order (Tokke G4 0.88, Vinje G3 0.82), which only run when the units ahead of them are already on. `start_hours_wv` matters least for Haukeli (0.06), which rarely switches (0.5 switches per week, Section 3.4).
 #
 # ### 8.3 Permutation importance: trees, net and blend
 #
@@ -595,11 +609,11 @@ for k, (m_, col) in enumerate((("xgb", BLUE), ("net", ORANGE), ("blend", AQUA)))
 ax.set_yticks(yy, si.index); ax.grid(axis="y", visible=False); ax.set_xlabel("Loss in AUC when this one feature is shuffled"); ax.set_title("Top 15 single features by loss in the blend, on 2022"); hl, lb = ax.get_legend_handles_labels(); ax.legend(hl[::-1], lb[::-1], loc="lower right"); plt.show()
 
 # %% [markdown]
-# The hypothesis held. Shuffling the LP schedule costs about 0.24 AUC in both models, far more than any other group, and LP sensitivity follows with about 0.02. Shuffling the market columns costs the network 0.0087 but the trees only 0.0005.
+# The hypothesis held (it was tested on LP v4 and holds on v5 as well). Shuffling the LP schedule costs 0.25 AUC in the trees and 0.28 in the network, far more than any other group, and LP sensitivity follows with about 0.01. Shuffling the market columns costs the network 0.0077 but the trees only 0.0005.
 #
-# One result was not predicted: the network loses 0.082 when the unit group is shuffled, and 0.065 from `unit_index` alone, although it also has a learned embedding for each unit. A possible reason, not tested: `unit_index` never varies apart from the unit embedding in training, so shuffling creates combinations the network has never seen, and the drop measures extrapolation more than reliance. The blend loses only 0.0018 on that column.
+# One result was not predicted: the network loses 0.091 when the unit group is shuffled, and 0.074 from `unit_index` alone, although it also has a learned embedding for each unit. A possible reason, not tested: `unit_index` never varies apart from the unit embedding in training, so shuffling creates combinations the network has never seen, and the drop measures extrapolation more than reliance. The blend loses only 0.0022 on that column.
 #
-# Single features cost at most 0.002 in the blend, because LP columns can stand in for each other. The group table is therefore the better guide. Single features use one shuffle and one seed, so differences below about 0.0002 are not meaningful.
+# Single features cost at most about 0.002 in the blend, because LP columns can stand in for each other. The group table is therefore the better guide. Single features use one shuffle and one seed, so differences below about 0.0002 are not meaningful.
 
 # %% [markdown]
 # ### 8.4 One week, side by side
@@ -614,7 +628,7 @@ for ax, M, tt in ((axs[1], Y[k], "SHOP's decision (label)"), (axs[2], LPU[k], "L
 axs[3].set_xticks(range(0, 168, 24), [f"day {d + 1}" for d in range(7)]); plt.show()
 
 # %% [markdown]
-# The LP gets most of the week right without any training: Tokke, Lio and Byrte are almost exact. Its main errors are holding Hogga, Vinje and Haukeli off for the first day or more, and switching Haukeli off late on day 7. The blend moves towards SHOP in these places and partly picks up Kjela's short runs. It also inherits some LP errors: on days 5-7 it follows the LP's on/off pattern for Hogga, while SHOP keeps Hogga running. This matches the interpretation above: the models build on the LP's plan and adjust it, rather than replacing it.
+# In this week SHOP runs every unit except Byrte and Vesle Kjela all week, and only Vinje G3 switches. The LP gets twelve of the fourteen units right without any training. Its errors are Hogga, which it switches off on days 3-5 and partly off on days 6-7 while SHOP keeps it running, and Vinje G3, which SHOP switches off five times but the LP only two short times. The blend keeps Hogga likely on, with less certainty where the LP has it off, and gives Vinje G3 a lower probability in the hours SHOP has it off, without placing the switches exactly. This matches the interpretation above: the models build on the LP's plan and adjust it, rather than replacing it.
 
 # %% [markdown]
 # ## 9. Error analysis
@@ -634,11 +648,12 @@ pb_ = 1 / (1 + np.exp(-B)); bn = np.linspace(0, 1, 21); ix = np.digitize(pb_.rav
 print("Blend AUC per year:", {y: round(auc(Y[ytr == y], B[ytr == y]), 5) for y in YRS}); lv = lambda A: np.broadcast_to(A.mean(2, keepdims=True), A.shape); print("AUC if only the weekly level were known, true level:", round(auc(Y, lv(Y)), 4), "| blend's level:", round(auc(Y, lv(B)), 4))
 
 # %% [markdown]
-# - **Units.** Learning adds most where the LP is weakest: Vinje G3 rises from 0.929 to 0.976, Hogga from 0.938 to 0.982 and Kjela from 0.950 to 0.989. These are still the three weakest units. Byrte (0.9995) and the Tokke units (about 0.996) are nearly solved. The blend matches or beats both of its members on all 14 units, even though their log-odds correlate at 0.97.
-# - **Unit and year.** The weakest cells are Lio 2022 (0.964), Vinje G3 2020 (0.964), Hogga 2017 (0.968), Vinje G3 2015 (0.969) and Kjela 2018 (0.971). Vinje G3 is below 0.975 in six of eight years. The weakest year overall is 2018 (0.99037). 2020, by far the hardest year in Phase 1 (E021a 0.97653), is now at 0.99214.
-# - **Price and month.** Performance is nearly flat across price levels (0.992-0.996). This matters, because the test years have different price levels. April is the weakest month for both the blend and the LP (0.988 and 0.958), followed by July. I did not investigate why.
+# - **Units.** Learning adds most where the LP is weakest: Vinje G3 rises from 0.930 to 0.976, Hogga from 0.938 to 0.982 and Kjela from 0.964 to 0.991. These are still the three weakest units. Byrte (0.9996) and the Tokke units (about 0.996) are nearly solved. The blend matches or beats both of its members on 13 of 14 units, even though their log-odds correlate at 0.97; on Tokke G3 it is 0.00001 below the network.
+# - **What LP v5 changed.** Against the same blend on LP v4, Kjela gains most (0.9889 to 0.9914), followed by Haukeli and Lio (+0.0006 each). The weakest cell on LP v4, Lio in 2022 (0.964), is now at 0.980, which fits the Lio correction.
+# - **Unit and year.** The weakest cells are now Vinje G3 2020 (0.964), Hogga 2017 (0.968), Vinje G3 2015 (0.970), Haukeli 2022 (0.970) and Vinje G3 2016 (0.971). Vinje G3 is below 0.975 in six of eight years. The weakest year overall is 2018 (0.99075). 2020, by far the hardest year in Phase 1 (E021a 0.97653), is now at 0.99267.
+# - **Price and month.** Performance is nearly flat across price levels (0.993-0.996). This matters, because the test years have different price levels. April is the weakest month for both the blend and the LP (0.988 and 0.958), followed by July. I did not investigate why.
 # - **Weekly level.** Knowing only each unit's true share of hours on in the week would give AUC 0.981. The blend's own weekly level gives 0.973. Part of the remaining error is therefore in the weekly level, not only in the hour-by-hour timing.
-# - **Calibration.** Predicted probabilities are close to the observed frequencies, but slightly too confident at low probabilities (predicted about 0.07, observed 0.115; predicted 0.12, observed 0.18). AUC depends only on the ranking, so I did not recalibrate.
+# - **Calibration.** Predicted probabilities are close to the observed frequencies, but slightly too confident at low probabilities (predicted about 0.07, observed 0.12; predicted 0.12, observed 0.18). AUC depends only on the ranking, so I did not recalibrate.
 
 # %% [markdown]
 # ## 10. Robustness
@@ -647,7 +662,7 @@ print("Blend AUC per year:", {y: round(auc(Y[ytr == y], B[ytr == y]), 5) for y i
 #
 # ### 10.1 Regime holdouts
 #
-# Here XGBoost is trained on one kind of period and tested on another, for example early against late years, or low-price against high-price weeks. Each holdout is run without the LP features, with them, and with them but without absolute prices; the last column is the LP alone. One caveat: I designed the LP while seeing labels from all these years.
+# Here XGBoost is trained on one kind of period and tested on another, for example early against late years, or low-price against high-price weeks. Each holdout is run without the LP features, with them, and with them but without absolute prices; the last column is the LP alone. These runs used LP v4 and were not repeated on v5. One caveat: I designed the LP while seeing labels from all these years.
 
 # %%
 rr = pd.read_csv("artifacts/robust_regime.csv").set_index("holdout"); rr.columns = ["n train", "n val", "No LP", "LP with prices", "LP, no prices", "LP alone (no training)"]; display(rr)
@@ -675,13 +690,13 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # %% [markdown]
 # The table shows the change in AUC against the unperturbed inputs, and the share of the LP's decisions that changed.
 #
-# - **Scaling** prices and water values together barely changes the result, because the LP's plan hardly changes (0.7-1.4 % of its decisions).
-# - **Negative prices are the largest unknown.** The blend loses 0.0072 AUC. The best model without the LP (E021a) lost 0.0229 under the same change, on different validation data, so the comparison is only indicative. In the hours pushed below zero, the predicted probability of running falls from 0.14 to 0.01. On the real test set, the mean predicted probability is 0.14 in negative-price hours and 0.48 in other hours. The direction is sensible, since producing at a negative price costs money, but how strongly SHOP reacts cannot be checked without labels.
-# - **Price noise** costs 0.0075, but it is the least relevant test, because SHOP and the features always see the same price.
+# - **Scaling** prices and water values together barely changes the result up to x2, because the LP's plan hardly changes (0.8-1.7 % of its decisions). At x4 the blend loses 0.003.
+# - **Negative prices are the largest unknown.** The blend loses 0.0055 AUC (0.0072 on LP v4). The best model without the LP (E021a) lost 0.0229 under the same change, on different validation data, so the comparison is only indicative. In the hours pushed below zero, the predicted probability of running falls from 0.14 to 0.01. On the real test set, the mean predicted probability is 0.14 in negative-price hours and 0.48 in other hours. The direction is sensible, since producing at a negative price costs money, but how strongly SHOP reacts cannot be checked without labels.
+# - **Price noise** costs 0.0069, but it is the least relevant test, because SHOP and the features always see the same price.
 #
-# **Why notebook 2 exists.** Notebook 1 bets that absolute price levels help the network (R6, R21). If the test years' price levels mislead it, that bet loses. Notebook 2 removes these columns from the network too, so no part of the model reads the price level directly. Under the stress tests it holds up somewhat better: the blend loses 0.00177 instead of 0.00231 when prices are scaled x4, and 0.00668 instead of 0.00722 with negative prices. The cost in validation is negligible (LOYO 0.99399 against 0.99400, forward equal). Both notebooks share the LP, so this hedge does not protect against the LP itself failing. I considered a model without the LP (E026) as the hedge instead, but rejected it: its LOYO is about 0.012 lower, and its predecessor E013 lost 0.029 with negative prices (indicative).
+# **Why notebook 2 exists.** Notebook 1 bets that absolute price levels help the network (R6, R21). If the test years' price levels mislead it, that bet loses. Notebook 2 removes these columns from the network too, so no part of the model reads the price level directly. Under the stress tests it holds up somewhat better: the blend loses 0.00260 instead of 0.00287 when prices are scaled x4, and 0.00512 instead of 0.00552 with negative prices. It costs nothing in validation on LP v5 (LOYO 0.99430 for both, forward 0.99408 against 0.99404). Both notebooks share the LP, so this hedge does not protect against the LP itself failing. I considered a model without the LP (E026) as the hedge instead, but rejected it: its LOYO is about 0.012 lower, and its predecessor E013 lost 0.029 with negative prices (indicative).
 #
-# The public leaderboard scores, 0.99638 and 0.99635, agree with this: the hedge costs almost nothing there either.
+# On LP v4 the public leaderboard agreed: 0.99638 for notebook 1 and 0.99635 for notebook 2. @@PUBTEXT@@
 
 # %% [markdown]
 # ## 11. Reproducibility
@@ -690,33 +705,33 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 #
 # Both notebooks contain all their code, start from the raw data, run offline and use no external data. LP solutions are saved in `work/`, so an interrupted run can resume. XGBoost and ST-Net each fall back to the CPU if the GPU fails.
 #
-# The table gives times in minutes. Each run started from an empty directory, with 4 cores and a 32 GB memory limit enforced by Slurm.
+# No GPU was available in the last two days before the deadline, so the submitted files were made without one. The table gives times in minutes. Each run started from an empty directory, with 4 cores and a 32 GB memory limit enforced by Slurm.
 #
-# | Run | Hardware | Total | LP | XGBoost | ST-Net | Peak RAM (GiB) | ST-Net GPU (GiB) | Against submitted file |
-# |---|---|---|---|---|---|---|---|---|
-# | Notebook 1 | H100 | 40 | 37 | 0.4 | 2.3 | 16.8 | 3.3 | Byte-identical |
-# | Notebook 2 | H100 | 40 | 37 | 0.4 | 2.3 | 16.7 | 3.2 | Byte-identical |
-# | Notebook 1 | No GPU, Xeon Gold 6348 | 166 | 37 | 4.6 | 125 | 17.9 | - | Spearman 0.99908 |
-# | Notebook 2 | No GPU, Xeon Gold 6348 | 165 | 37 | 4.6 | 123 | 18.0 | - | Spearman 0.99913 |
-# | Notebook 1 | P100 node, XGBoost on CPU | 307 | 62 | 7.1 | 238 | 17.7 | 4.7 | Spearman 0.99908 |
-# | Notebook 1 | P100 node, both on CPU after a forced GPU failure | 277 | 62 | 7.2 | 208 | 17.9 | - | Spearman 0.99908 |
+# | Run | Hardware | Total | LP | XGBoost | ST-Net | Peak RAM (GiB) | Against submitted file |
+# |---|---|---|---|---|---|---|---|
+# | Notebook 1 | No GPU, Xeon 6730P | 227 | 109 | 3.9 | 114 | 17.7 | Is the submitted file |
+# | Notebook 2 | No GPU, Xeon 6730P | 224 | 108 | 3.6 | 112 | 17.7 | Is the submitted file |
+@@RERUNROWS@@#
+# Before LP v5, the same notebooks on LP v4 ran in 40 minutes on an H100 (LP 37), in 166 minutes without a GPU on a Xeon Gold 6348, and in 277-307 minutes on a node with a Tesla P100, all from an empty directory with the same limits.
 #
-# - **Same hardware gives the same file.** Reruns on the H100 reproduce both submitted files byte for byte, and two CPU runs of notebook 1 on the same CPU model also gave identical files. Other hardware changes the numbers slightly (rank correlation 0.999 with the submitted file), and I have no public score for those files. Against my research scripts, the notebooks' XGBoost predictions are identical, and the ST-Net log-odds differ by at most 0.145 (Spearman 0.99999).
-# - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU. The slowest run took 5 h 7 min, and no run used more than 18.0 GiB. Without a GPU, the largest difference in log-odds to the submitted file is 1.26 (99th percentile 0.49).
-# - **GPU.** XGBoost 3.4.1 does not support the Tesla P100 (`not compiled for SM 60`), so it fell back to the CPU there. To test the ST-Net fallback, I limited GPU memory until training ran out of it. On the same type of node, ST-Net took longer on the P100 than on 4 CPU cores (238 against 208 minutes). I did not investigate why.
+# - **The LP gives the same result everywhere.** The LP is the only part with a time-dependent step (Lio's integer problem, Section 5.1), so I checked it directly: a second run of all 3647 cases on a different machine (Xeon Gold 6132) gave bit-identical schedules, shadow prices and flows. @@LPCHECK@@ No case reached the 10-minute limit of the integer step; the slowest took 2 minutes.
+# - **Same hardware gives the same file.** @@SAMEHW@@ Training on other hardware changes the predictions slightly: on LP v4, files from a GPU and from a CPU had rank correlation 0.999 with each other.
+# - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU: the slowest run took 3 h 47 min and used 17.7 GiB. The LP stage takes about 3 times as long as on LP v4 (109 against 37 minutes) because of Lio's integer step.
+# - **GPU.** XGBoost 3.4.1 does not support the Tesla P100 (`not compiled for SM 60`) or the V100 (SM 70), so it falls back to the CPU there. On LP v4 I tested the ST-Net fallback by limiting GPU memory until training ran out of it.
 #
 # Versions are in `requirements.txt`: Python 3.12, PyTorch 2.6.0 with CUDA 12.4, XGBoost 3.4.1, SciPy 1.18.1 with HiGHS.
 
 # %% [markdown]
 # ## 12. Limitations
 #
-# - **No untouched holdout.** I chose the LP's structure, for example telescoping water values, by scoring versions against labels from all training years. The LOYO and forward scores for models with the LP are therefore somewhat optimistic. The public leaderboard is the only fully independent check, and I looked at it several times, which weakens it a little too.
+# - **No untouched holdout.** I chose the LP's structure, for example telescoping water values, by scoring versions against labels from all training years. The same holds for LP v5: I found its two corrections two days before the deadline by comparing the LP's plan with the labels unit by unit, and the choice of Lio as the only unit with whole on/off decisions came from that comparison. The LOYO and forward scores for models with the LP are therefore somewhat optimistic. The public leaderboard is the only fully independent check, and I looked at it several times, which weakens it a little too.
 # - **Negative prices** are 2.2 % of test hours (1.99 % in 2023, 2.35 % in 2024) but almost absent from training, so no model has learned how SHOP reacts to them. How these hours are split between the public and private test sets is unknown, so the private score may react differently from the public one.
 # - **Weakest units:** Vinje G3, Hogga and Kjela. Start costs and whole on/off decisions at small margins are a likely cause, but I did not establish this.
-# - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1. The models can only correct these simplifications where the training years show how.
+# - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1 for every unit except Lio. Vinje G3 is a known gap: in a quarter of the hours where the LP runs Vinje G3, SHOP runs only two Vinje units (25 % on both LP v4 and v5), and I could not find the cause. The models can only correct these simplifications where the training years show how.
 # - **Blend weight** not chosen nested for the final pair (Section 7).
 # - **Interpretation.** SHAP covers only the trees, shuffling breaks physical consistency, and correlated features share credit.
-# - **Runtime.** The slowest measured run took 5 h 7 min, a factor of 2.3 below 12 hours. All runs used server CPUs, and a laptop can be slower.
+# - **Runtime.** The slowest measured run of the final notebooks took 3 h 47 min, a factor of 3.2 below 12 hours. All runs used server CPUs, and a laptop can be slower.
+# - **Training hardware.** The final comparison of LP v5 against v4 and the submitted files were trained on CPUs, because no GPU was available in the last two days. The CPU runs on LP v4 match the earlier GPU runs closely, so this should not change the conclusions.
 
 # %% [markdown]
 # ## 13. Conclusion

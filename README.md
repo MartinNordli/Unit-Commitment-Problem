@@ -8,10 +8,11 @@ Course project in TDT4173 Modern Machine Learning in Practice (NTNU, autumn 2026
 
 | Model | Cross-validation, leave one year out (2015-22) | Forward validation (2019-22) | Public leaderboard |
 |---|---|---|---|
-| **XGBoost + ST-Net on LP features** (final, notebook 1) | **0.99400** | **0.99379** | **0.99638** |
-| Same, network without absolute price levels (hedge, notebook 2) | 0.99399 | 0.99379 | 0.99635 |
+| **XGBoost + ST-Net on LP v5 features** (final, notebook 1) | **0.99430** | **0.99404** | @@PUB1@@ |
+| Same, network without absolute price levels (hedge, notebook 2) | 0.99430 | 0.99408 | @@PUB2@@ |
+| The same two models on LP v4 | 0.99400, 0.99399 | 0.99379, 0.99379 | 0.99638, 0.99635 |
 | LightGBM + ST-Net, best without the LP | 0.98584 | - | 0.98906 |
-| LP plan alone, no training | 0.9705 | - | - |
+| LP v5 plan alone, no training | 0.9709 | - | - |
 | LightGBM, base features | 0.95515 | 0.94877 | - |
 
 Metric: micro-averaged ROC AUC over all unit-hours. Models were selected on cross-validation; the public leaderboard was only a sanity check.
@@ -34,9 +35,9 @@ A unit should roughly run when the electricity price is above the *water value*,
 
 ![Pipeline](docs/img/pipeline.png)
 
-**1. LP surrogate of SHOP** (`src/lp_surrogate.py`). For each case, maximise income from selling power plus the value of water left at the end of the week, subject to the water balance in all 17 reservoirs, volume limits, minimum flows and unit power curves. On/off decisions are relaxed to values between 0 and 1, which makes the problem a fast linear program (about a second per solve with HiGHS). It has no trained parameters; the only thing taken from the labels is the start order of identical units.
+**1. LP surrogate of SHOP** (`src/lp_surrogate.py`). For each case, maximise income from selling power plus the value of water left at the end of the week, subject to the water balance in all 17 reservoirs, volume limits, minimum flows and unit power curves. On/off decisions are relaxed to values between 0 and 1, which makes the problem a fast linear program, except for one unit, Lio, whose 168 on/off values are solved as whole numbers first (a few seconds per solve with HiGHS). Flow costs on the main rivers follow the convex cost curve in the system file. It has no trained parameters; the only thing taken from the labels is the start order of identical units.
 
-The key detail was how to value water left in a reservoir. With *telescoping* water values, water in a reservoir is worth its own water value times the energy of the plant below, plus what the same water is worth in the next reservoir down. A plant's margin then nets out to *price minus the water value directly above it*. Two simpler readings gave the LP an AUC of 0.61 and 0.74; telescoping gave 0.93, and later refinements 0.97.
+The key detail was how to value water left in a reservoir. With *telescoping* water values, water in a reservoir is worth its own water value times the energy of the plant below, plus what the same water is worth in the next reservoir down. A plant's margin then nets out to *price minus the water value directly above it*. Two simpler readings gave the LP an AUC of 0.61 and 0.74; telescoping gave 0.93, and later refinements 0.97. The last version (v5) corrected two places where the LP solved a different problem from SHOP: the river cost curves, and a relaxed Lio covering a minimum flow below its minimum output. Its own AUC barely moved, but every model trained on it gained about 0.0004.
 
 **2. Features** (`src/features.py`). The LP is solved three times per case, with water values scaled by 1.0, 0.9 and 1.1. A decision that flips between the solves is a near-tie, where the LP is most likely to disagree with SHOP. Features describe the LP's plan, its marginal cost (from shadow prices), these sensitivities, and market, calendar, unit and water state.
 
@@ -67,5 +68,5 @@ The competition data is not included. Place the raw files next to a short notebo
 
 ## Limitations
 
-- The LP's structure was chosen by scoring it against labels from all training years, so no year is fully untouched and the validation scores are somewhat optimistic.
+- The LP's structure, including the two v5 corrections, was chosen by comparing it with labels from all training years, so no year is fully untouched and the validation scores are somewhat optimistic.
 - Negative prices make up 2.2 % of test hours but only 0.014 % of training hours. The models react in a sensible direction, but how SHOP reacts cannot be checked without labels.
