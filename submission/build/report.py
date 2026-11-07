@@ -9,7 +9,7 @@
 #
 # The code cells produce the figures and computed tables from the raw data and the saved experiment results. Tables written by hand quote the experiment log. The notebook was run in my project directory and uses its helper modules, so it is a report to read, not a program to rerun. The two short notebooks are self-contained.
 #
-# **How to read this report.** Section 1 tells the whole story on one page. Section 2 explains the task and the terms used throughout. Sections 3 to 11 give the evidence, and Section 13 sums up what I learned. Each section starts by saying which question it answers and why that question matters.
+# **How to read this report.** Section 1 tells the whole story on one page. Section 2 explains the task and the terms used throughout. Sections 3 to 11 give the evidence, Section 12 lists the limitations, and Section 13 sums up what I learned. The appendix explains the experiment numbers used in the text. Each section starts by saying which question it answers and why that question matters.
 #
 # ## Contents
 # 1. Summary
@@ -31,10 +31,14 @@
 # 11. Reproducibility
 # 12. Limitations
 # 13. Conclusion
+#
+# Appendix: experiment numbers
 
 # %%
 import sys, json, re, warnings
-sys.path.insert(0, "src"); sys.dont_write_bytecode = True; warnings.filterwarnings("ignore")
+sys.path.insert(0, "src")
+sys.dont_write_bytecode = True
+warnings.filterwarnings("ignore")
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from IPython.display import display, Markdown
 from common import load_cases, years, auc, RES, INFLOW, MINFLOW, MINVOL
@@ -47,21 +51,37 @@ plt.rcParams.update({"figure.dpi": 110, "figure.facecolor": "#fcfcfb", "axes.fac
     "axes.titlesize": 11, "axes.titleweight": "bold", "axes.titlelocation": "left", "axes.labelsize": 9, "xtick.color": MUTED, "ytick.color": MUTED, "xtick.labelsize": 8, "ytick.labelsize": 8,
     "axes.grid": True, "grid.color": GRID, "grid.linewidth": .6, "axes.axisbelow": True, "axes.spines.top": False, "axes.spines.right": False, "legend.frameon": False, "legend.fontsize": 8, "lines.linewidth": 2})
 def heat(ax, M, xl, yl, title, vmin=None, vmax=None, fmt="{:.3f}", cmap="Blues", size=7):
-    im = ax.imshow(M, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax); ax.grid(False); ax.set_xticks(range(len(xl)), xl); ax.set_yticks(range(len(yl)), yl); ax.set_title(title)
+    im = ax.imshow(M, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+    ax.grid(False)
+    ax.set_xticks(range(len(xl)), xl)
+    ax.set_yticks(range(len(yl)), yl)
+    ax.set_title(title)
     lo, hi = np.nanmin(M) if vmin is None else vmin, np.nanmax(M) if vmax is None else vmax
     for i in range(M.shape[0]):
         for j in range(M.shape[1]):
             ax.text(j, i, fmt.format(M[i, j]), ha="center", va="center", fontsize=size, color="white" if (M[i, j] - lo) / (hi - lo + 1e-12) > .6 else INK)
     return im
 
-pd.set_option("display.max_colwidth", 110); pd.set_option("display.width", 220)
-c = load_cases(); Y = c["Y"]; P = c["price"]; yr = years(c); N_TR = 2922; ytr = yr[:N_TR]; YRS = list(range(2015, 2023)); starts = pd.to_datetime(c["start"])
+pd.set_option("display.max_colwidth", 110)
+pd.set_option("display.width", 220)
+c = load_cases()
+Y = c["Y"]
+P = c["price"]
+yr = years(c)
+N_TR = 2922
+ytr = yr[:N_TR]
+YRS = list(range(2015, 2023))
+starts = pd.to_datetime(c["start"])
 rows = {}
 for l in open("experiments.jsonl"):
-    d = json.loads(l); rows[d["name"]] = d
+    d = json.loads(l)
+    rows[d["name"]] = d
 # Final models: LP v5 (`lp5q`). The v4/v5 comparison was trained on CPU nodes for both LPs (Section 5.3).
-XT, NT = np.load("artifacts/oof/XR5c_ls.npy").astype(np.float64), np.load("artifacts/oof/N6c_v5.npy").astype(np.float64); B = .7 * XT + .3 * NT
-Z = np.load("artifacts/lp/lp5q.npz"); LPF = Z["pfrac"].astype(np.float64); LPU = Z["u"].astype(np.float64)
+XT, NT = np.load("artifacts/oof/XR5c_ls.npy").astype(np.float64), np.load("artifacts/oof/N6c_v5.npy").astype(np.float64)
+B = .7 * XT + .3 * NT
+Z = np.load("artifacts/lp/lp5q.npz")
+LPF = Z["pfrac"].astype(np.float64)
+LPU = Z["u"].astype(np.float64)
 XF, NF = np.load("artifacts/fwd/XR5c_ls_f.npy").astype(np.float64), np.load("artifacts/fwd/N6fc_v5.npy").astype(np.float64)
 B4 = .7 * np.load("artifacts/oof/XR_ls.npy").astype(np.float64) + .3 * np.load("artifacts/oof/N6_min.npy").astype(np.float64)  # final blend on LP v4, GPU
 print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfinite(XF).all((1, 2))], (.7 * XF + .3 * NF)[np.isfinite(XF).all((1, 2))]), 5))
@@ -75,21 +95,33 @@ print("LOYO blend", round(auc(Y, B), 5), "| forward blend", round(auc(Y[np.isfin
 #
 # **The idea.** Instead of leaving the logic to the model, I rebuilt a simplified version of SHOP's optimisation problem as a linear program (LP), solved it for every case, and gave its plan to the models as input features. The LP has no trained parameters; the only thing it takes from the labels is the order in which identical units start. On its own, its plan already reaches an AUC of 0.97. The machine-learning models then only have to learn where SHOP deviates from the simplified plan.
 #
-# **The result.** Adding the LP was by far the largest step in the project: the same LightGBM model went from 0.955 to 0.992. The final submission blends two different model types, XGBoost and a neural network (ST-Net), both built on the LP features. It reaches 0.9943 in cross-validation and 0.99651 on the public leaderboard. Two days before the deadline I found and corrected two places where the LP solved a different problem from SHOP (LP v5, Section 5.1): the cost of sending water down the main rivers, and the unit Lio running partly "on" to meet a minimum flow. This raised every model by about 0.0004 in cross-validation. The public score, which I saw only after accepting LP v5, rose from 0.99638 to 0.99651.
+# **The result.** Adding the LP was by far the largest step in the project: the same LightGBM model went from 0.955 to 0.992. The final submission blends two different model types, XGBoost and a neural network (ST-Net), both built on the LP features. It reaches 0.9943 in cross-validation and 0.99651 on the public leaderboard. The final LP (version 5) includes two corrections found late in the project, which raised every model by about 0.0004 (Sections 5.1 and 5.3).
 
 # %%
-fig, ax = plt.subplots(figsize=(11, 2.9)); ax.set_xlim(0, 11.2); ax.set_ylim(.35, 2.85); ax.axis("off")
+fig, ax = plt.subplots(figsize=(11, 2.9))
+ax.set_xlim(0, 11.2)
+ax.set_ylim(.35, 2.85)
+ax.axis("off")
 def box(x, y, w, h, title, body, col):
     ax.add_patch(plt.Rectangle((x, y), w, h, fc=col, ec="none", alpha=.15))
-    ax.text(x + .12, y + h - .16, title, fontsize=9.5, fontweight="bold", color=INK, va="top"); ax.text(x + .12, y + h - .5, body, fontsize=7.4, color=MUTED, va="top", linespacing=1.5)
-def arrow(x0, y0, x1, y1): ax.annotate("", xy=(x1, y1), xytext=(x0, y0), arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.2))
+    ax.text(x + .12, y + h - .16, title, fontsize=9.5, fontweight="bold", color=INK, va="top")
+    ax.text(x + .12, y + h - .5, body, fontsize=7.4, color=MUTED, va="top", linespacing=1.5)
+def arrow(x0, y0, x1, y1):
+    ax.annotate("", xy=(x1, y1), xytext=(x0, y0), arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.2))
 box(.05, .45, 2.05, 2.3, "1. Case inputs", "prices and inflows, 168 h\nstart volumes\nend-of-week water values\nminimum flows, volumes\ntopology, unit curves", BLUE)
 box(2.5, .45, 2.05, 2.3, "2. LP surrogate", "simplified SHOP problem\nsolved 3 times (HiGHS)\nwater values x1, x0.9, x1.1\nno trained parameters\nAUC 0.97 on its own", YELLOW)
 box(4.95, .45, 2.05, 2.3, "3. Features", "LP plan (36 columns)\nLP sensitivity (7)\nmarket and calendar (15)\nunit and water state (14)", ORANGE)
-box(7.4, 1.7, 1.65, 1.05, "4a. XGBoost", "66 features\n3 seeds", AQUA); box(7.4, .45, 1.65, 1.05, "4b. ST-Net", "70 features\n3 seeds", AQUA)
+box(7.4, 1.7, 1.65, 1.05, "4a. XGBoost", "66 features\n3 seeds", AQUA)
+box(7.4, .45, 1.65, 1.05, "4b. ST-Net", "70 features\n3 seeds", AQUA)
 box(9.45, .45, 1.7, 2.3, "5. Blend", "0.7 trees + 0.3 net\nin log-odds\n\nP(on) for 14 units\nx 168 hours", VIOLET)
-arrow(2.1, 1.6, 2.5, 1.6); arrow(4.55, 1.6, 4.95, 1.6); arrow(7.0, 1.8, 7.4, 2.2); arrow(7.0, 1.4, 7.4, 1.0); arrow(9.05, 2.2, 9.45, 1.85); arrow(9.05, 1.0, 9.45, 1.35)
-ax.set_title("How a prediction is made"); plt.show()
+arrow(2.1, 1.6, 2.5, 1.6)
+arrow(4.55, 1.6, 4.95, 1.6)
+arrow(7.0, 1.8, 7.4, 2.2)
+arrow(7.0, 1.4, 7.4, 1.0)
+arrow(9.05, 2.2, 9.45, 1.85)
+arrow(9.05, 1.0, 9.45, 1.35)
+ax.set_title("How a prediction is made")
+plt.show()
 
 # %% [markdown]
 # | Submission | Model | Cross-validation, LOYO (2015-22) | Forward validation (2019-22) | Public leaderboard |
@@ -133,7 +165,7 @@ ax.set_title("How a prediction is made"); plt.show()
 # | Blend in log-odds | The final prediction averages the two models' log-odds, not their probabilities. |
 # | Nested | Weights chosen inside each fold, so the validation year is never used to choose them. |
 # | `lp_*`, `ls_*` | Feature columns from the LP's plan, and from the LP solved again with changed water values (Section 5.2). |
-# | E..., L..., N..., X..., R... | IDs of runs in my experiment log, given so every number can be traced. The text says what each one tested. |
+# | E..., L..., N..., X..., R... | IDs of runs in my experiment log. The tables in Section 6 say what each E, L, N and X run tested, and the appendix explains each R number and links to the full log. |
 
 # %% [markdown]
 # ## 3. Exploratory data analysis
@@ -184,27 +216,58 @@ for a, b in [("Vinje_G1", "Vinje_G2"), ("Vinje_G2", "Vinje_G3"), ("Tokke_G1", "T
 # Based on my findings from 3.1, two things should hold: units should run when the price is above the water value, and the share of units running should follow the market. The figures below test both.
 
 # %%
-ri = {r: k for k, r in enumerate(RES)}; wk = np.arange(0, len(P), 7); dates = starts[wk]; wv = c["wv_end"]
+ri = {r: k for k, r in enumerate(RES)}
+wk = np.arange(0, len(P), 7)
+dates = starts[wk]
+wv = c["wv_end"]
 fig, ax = plt.subplots(2, 1, figsize=(10, 5), sharex=True, gridspec_kw=dict(hspace=.25))
-ax[0].plot(dates, P.mean(1)[wk], color=BLUE, label="Weekly mean price"); ax[0].plot(dates, wv.mean(1)[wk], color=ORANGE, label="Mean water value at end of week")
-ax[0].axvspan(starts[N_TR], starts[-1], color=GRID, alpha=.6, lw=0); ax[0].text(starts[N_TR + 15], ax[0].get_ylim()[1] * .88, "Test years", fontsize=8, color=MUTED); ax[0].set_ylabel("EUR/MWh"); ax[0].set_title("Water values follow the market, and the years differ sharply"); ax[0].legend(loc="upper left")
-ax[1].plot(starts[:N_TR][wk[wk < N_TR]], Y[wk[wk < N_TR]].mean((1, 2)), color=AQUA); ax[1].axvspan(starts[N_TR], starts[-1], color=GRID, alpha=.6, lw=0); ax[1].set_ylabel("Share of unit-hours on"); ax[1].set_title("SHOP's on-share by week (labels hidden in test years)"); ax[1].set_ylim(0, 1); plt.show()
+ax[0].plot(dates, P.mean(1)[wk], color=BLUE, label="Weekly mean price")
+ax[0].plot(dates, wv.mean(1)[wk], color=ORANGE, label="Mean water value at end of week")
+ax[0].axvspan(starts[N_TR], starts[-1], color=GRID, alpha=.6, lw=0)
+ax[0].text(starts[N_TR + 15], ax[0].get_ylim()[1] * .88, "Test years", fontsize=8, color=MUTED)
+ax[0].set_ylabel("EUR/MWh")
+ax[0].set_title("Water values follow the market, and the years differ sharply")
+ax[0].legend(loc="upper left")
+ax[1].plot(starts[:N_TR][wk[wk < N_TR]], Y[wk[wk < N_TR]].mean((1, 2)), color=AQUA)
+ax[1].axvspan(starts[N_TR], starts[-1], color=GRID, alpha=.6, lw=0)
+ax[1].set_ylabel("Share of unit-hours on")
+ax[1].set_title("SHOP's on-share by week (labels hidden in test years)")
+ax[1].set_ylim(0, 1)
+plt.show()
 
 # %%
-fig, axs = plt.subplots(3, 3, figsize=(10, 6.2), sharex=True, sharey=True, gridspec_kw=dict(hspace=.3, wspace=.1)); bins = np.arange(-40, 41, 4); rowsT = []
+fig, axs = plt.subplots(3, 3, figsize=(10, 6.2), sharex=True, sharey=True, gridspec_kw=dict(hspace=.3, wspace=.1))
+bins = np.arange(-40, 41, 4)
+rowsT = []
 for ax, pl in zip(axs.ravel(), PLANTS):
-    u0 = [k for k, u in enumerate(UNITS) if TOPO.gen_plant[u] == pl][0]; w = wv[:N_TR, ri[UP[u0]]]; d = (P[:N_TR] - w[:, None]).ravel(); y = Y[:, u0].ravel(); b = np.digitize(d, bins); xs, ys = [], []
+    u0 = [k for k, u in enumerate(UNITS) if TOPO.gen_plant[u] == pl][0]
+    w = wv[:N_TR, ri[UP[u0]]]
+    d = (P[:N_TR] - w[:, None]).ravel()
+    y = Y[:, u0].ravel()
+    b = np.digitize(d, bins)
+    xs, ys = [], []
     for k in range(1, len(bins)):
-        if (b == k).sum() > 200: xs.append((bins[k - 1] + bins[k]) / 2); ys.append(y[b == k].mean())
-    ax.plot(xs, ys, color=BLUE); ax.axvline(0, color=MUTED, lw=.8); ax.set_title(pl); ax.set_ylim(-.03, 1.03)
-    on = Y[:, u0].astype(bool); mix = (on.sum(1) >= 12) & (on.sum(1) <= 156); th = np.array([(np.median(P[k][on[k]]) + np.median(P[k][~on[k]])) / 2 for k in np.where(mix)[0]])
-    wu = wv[:N_TR, ri[UP[u0]]][mix]; wd = wv[:N_TR, ri[DOWN[u0]]][mix] if DOWN[u0] else np.zeros(mix.sum()); A = np.c_[wu, wd, np.ones(len(wu))]; co = np.linalg.lstsq(A, th, rcond=None)[0]
+        if (b == k).sum() > 200:
+            xs.append((bins[k - 1] + bins[k]) / 2)
+            ys.append(y[b == k].mean())
+    ax.plot(xs, ys, color=BLUE)
+    ax.axvline(0, color=MUTED, lw=.8)
+    ax.set_title(pl)
+    ax.set_ylim(-.03, 1.03)
+    on = Y[:, u0].astype(bool)
+    mix = (on.sum(1) >= 12) & (on.sum(1) <= 156)
+    th = np.array([(np.median(P[k][on[k]]) + np.median(P[k][~on[k]])) / 2 for k in np.where(mix)[0]])
+    wu = wv[:N_TR, ri[UP[u0]]][mix]
+    wd = wv[:N_TR, ri[DOWN[u0]]][mix] if DOWN[u0] else np.zeros(mix.sum())
+    A = np.c_[wu, wd, np.ones(len(wu))]
+    co = np.linalg.lstsq(A, th, rcond=None)[0]
     rowsT.append(dict(plant=pl, weeks=int(mix.sum()), coef_wv_up=co[0], coef_wv_down=co[1], intercept=co[2], R2=1 - ((th - A @ co) ** 2).sum() / ((th - th.mean()) ** 2).sum()))
-fig.suptitle("Share of hours on against price minus upstream water value (EUR/MWh), first unit of each plant, 2015-2022", fontsize=11, fontweight="bold", x=.09, ha="left", y=.97); plt.show()
+fig.suptitle("Share of hours on against price minus upstream water value (EUR/MWh), first unit of each plant, 2015-2022", fontsize=11, fontweight="bold", x=.09, ha="left", y=.97)
+plt.show()
 display(pd.DataFrame(rowsT).round(2))
 
 # %% [markdown]
-# It holds true for the most part, but there are a few, clear exceptions:
+# It holds true for the most part, but there are a few clear exceptions:
 #
 # - **Price and water value move together.** Weekly mean price and mean water value correlate at 0.93 (top figure). A high price therefore does not by itself mean that a unit should run, because the water is then also worth more. This is why my features compare price with water value instead of using the price alone.
 # - **The margin "price minus water value" works.** In the 3x3 figure, the share of hours on rises sharply where the price passes the water value (margin 0). Byrte, Songa, Kjela and Vesle Kjela are close to clean on/off steps. Hogga, Tokke, Lio, Vinje and Haukeli still run 15-50 % of the time at strongly negative margins, probably because of minimum flow rules or water that would otherwise spill.
@@ -218,17 +281,36 @@ display(pd.DataFrame(rowsT).round(2))
 # Next, each input on its own: price levels per year, how often each unit runs, the seasons, and the price distribution in training against test years.
 
 # %%
-h = pd.read_csv("data/kernel/Historical_day_ahead_price_2015_2025.csv", parse_dates=["date"]).set_index("date").iloc[:, 0]; h.index = pd.to_datetime(h.index, utc=True); h = h["2015":"2024-12-31"]; g = h.groupby(h.index.year)
+h = pd.read_csv("data/kernel/Historical_day_ahead_price_2015_2025.csv", parse_dates=["date"]).set_index("date").iloc[:, 0]
+h.index = pd.to_datetime(h.index, utc=True)
+h = h["2015":"2024-12-31"]
+g = h.groupby(h.index.year)
 display(pd.DataFrame({"min": g.min(), "median": g.median(), "mean": g.mean(), "max": g.max(), "% negative hours": g.apply(lambda s: (s < 0).mean() * 100)}).round(2).rename_axis("Price, EUR/MWh"))
-months = starts[:N_TR].month.values; ml = "J F M A M J J A S O N D".split()
+months = starts[:N_TR].month.values
+ml = "J F M A M J J A S O N D".split()
 fig, ax = plt.subplots(1, 2, figsize=(11, 4.4), gridspec_kw=dict(wspace=.25, width_ratios=[1, 1.15]))
 heat(ax[0], np.array([[Y[ytr == y, g_].mean() for y in YRS] for g_ in range(14)]), [str(y)[2:] for y in YRS], UNITS, "Share of hours on, by year", 0, 1, "{:.2f}")
-heat(ax[1], np.array([[Y[months == m, g_].mean() for m in range(1, 13)] for g_ in range(14)]), ml, UNITS, "Share of hours on, by month", 0, 1, "{:.2f}", size=6.5); plt.show()
-hh = (P[:N_TR] - np.median(P[:N_TR], 1, keepdims=True)); q = pd.read_csv("data/kernel/Historical_inflow_1958_2025.csv", parse_dates=["date"]).set_index("date"); q.index = pd.to_datetime(q.index, utc=True); q15 = q["2015":"2022"]
+heat(ax[1], np.array([[Y[months == m, g_].mean() for m in range(1, 13)] for g_ in range(14)]), ml, UNITS, "Share of hours on, by month", 0, 1, "{:.2f}", size=6.5)
+plt.show()
+hh = (P[:N_TR] - np.median(P[:N_TR], 1, keepdims=True))
+q = pd.read_csv("data/kernel/Historical_inflow_1958_2025.csv", parse_dates=["date"]).set_index("date")
+q.index = pd.to_datetime(q.index, utc=True)
+q15 = q["2015":"2022"]
 fig, ax = plt.subplots(1, 3, figsize=(11, 3), gridspec_kw=dict(wspace=.28))
-ax[0].plot(range(1, 13), q15.sum(axis=1).groupby(q15.index.month).mean(), color=BLUE); ax[0].set_xticks(range(1, 13), ml); ax[0].set_title("Total inflow by month"); ax[0].set_ylabel("m3/s")
-ax[1].hist(np.arcsinh(h.loc["2015":"2022"] / 10), bins=60, color=BLUE, density=True, label="2015-22", alpha=.75); ax[1].hist(np.arcsinh(h.loc["2023":] / 10), bins=60, color=ORANGE, density=True, label="2023-24", alpha=.6); ax[1].set_title("Price, asinh(price/10)"); ax[1].legend()
-ll = Y.mean(2).ravel(); ax[2].hist(ll, bins=40, color=BLUE); ax[2].set_title("Unit on-share within a week"); ax[2].set_yscale("log"); ax[2].set_ylabel("unit-weeks (log)"); plt.show()
+ax[0].plot(range(1, 13), q15.sum(axis=1).groupby(q15.index.month).mean(), color=BLUE)
+ax[0].set_xticks(range(1, 13), ml)
+ax[0].set_title("Total inflow by month")
+ax[0].set_ylabel("m3/s")
+ax[1].hist(np.arcsinh(h.loc["2015":"2022"] / 10), bins=60, color=BLUE, density=True, label="2015-22", alpha=.75)
+ax[1].hist(np.arcsinh(h.loc["2023":] / 10), bins=60, color=ORANGE, density=True, label="2023-24", alpha=.6)
+ax[1].set_title("Price, asinh(price/10)")
+ax[1].legend()
+ll = Y.mean(2).ravel()
+ax[2].hist(ll, bins=40, color=BLUE)
+ax[2].set_title("Unit on-share within a week")
+ax[2].set_yscale("log")
+ax[2].set_ylabel("unit-weeks (log)")
+plt.show()
 print("Hours with negative prices inside cases, train:", round(float((P[:N_TR] < 0).mean()) * 100, 3), "% | test:", round(float((P[N_TR:] < 0).mean()) * 100, 2), "%")
 print("Switches per unit-week:", {u: round(float(v), 1) for u, v in zip(UNITS, np.abs(np.diff(Y, axis=2)).sum(2).mean(0))})
 
@@ -246,15 +328,27 @@ print("Switches per unit-week:", {u: round(float(v), 1) for u, v in zip(UNITS, n
 # Here I look at how units and inputs relate to each other, and whether the test years look like the training years.
 
 # %%
-wvc = np.corrcoef(wv.T); labc = np.corrcoef(Y.transpose(1, 0, 2).reshape(14, -1))
-vmat = np.array(pd.read_csv("data/kernel/Historical_volume_2015_2024.csv", index_col=0)[RES]); mx = np.array([float(TOPO.res[r]["max_vol"]) for r in RES])
+wvc = np.corrcoef(wv.T)
+labc = np.corrcoef(Y.transpose(1, 0, 2).reshape(14, -1))
+vmat = np.array(pd.read_csv("data/kernel/Historical_volume_2015_2024.csv", index_col=0)[RES])
+mx = np.array([float(TOPO.res[r]["max_vol"]) for r in RES])
 fig, ax = plt.subplots(1, 2, figsize=(11, 4.6), gridspec_kw=dict(wspace=.28))
-heat(ax[0], labc, [u.replace("_G", "") .replace("Vesle Kjela", "VK")[:6] for u in UNITS], UNITS, "Correlation of on/off labels between units", -.1, 1, "{:.1f}", size=6.5); ax[0].tick_params(axis="x", rotation=90)
-ax[1].scatter(P.mean(1), wv.mean(1), s=5, c=np.where(np.arange(len(P)) < N_TR, BLUE, ORANGE), alpha=.5, linewidths=0); ax[1].set_xscale("symlog", linthresh=30); ax[1].set_yscale("symlog", linthresh=30); ax[1].set_xlabel("Weekly mean price, EUR/MWh (symlog)"); ax[1].set_ylabel("Mean water value, EUR/MWh (symlog)"); ax[1].set_title("Price and water value by case")
-for lab, col in (("Train", BLUE), ("Test", ORANGE)): ax[1].scatter([], [], s=20, c=col, label=lab)
-ax[1].legend(); plt.show()
-print("Correlation between weekly mean price and mean water value:", round(float(np.corrcoef(P.mean(1), wv.mean(1))[0, 1]), 2)); print("Correlation between reservoirs' water values, min and median:", round(float(wvc.min()), 2), round(float(np.median(wvc)), 2))
-print("Share of hours with a non-zero minimum flow:", {k: round(float(v), 2) for k, v in zip(MINFLOW, (c["minflow"] > 0).mean((0, 1)))}); print("Share of hours with a non-zero minimum volume:", {k: round(float(v), 2) for k, v in zip(MINVOL, (c["minvol"] > 0).mean((0, 1)))})
+heat(ax[0], labc, [u.replace("_G", "") .replace("Vesle Kjela", "VK")[:6] for u in UNITS], UNITS, "Correlation of on/off labels between units", -.1, 1, "{:.1f}", size=6.5)
+ax[0].tick_params(axis="x", rotation=90)
+ax[1].scatter(P.mean(1), wv.mean(1), s=5, c=np.where(np.arange(len(P)) < N_TR, BLUE, ORANGE), alpha=.5, linewidths=0)
+ax[1].set_xscale("symlog", linthresh=30)
+ax[1].set_yscale("symlog", linthresh=30)
+ax[1].set_xlabel("Weekly mean price, EUR/MWh (symlog)")
+ax[1].set_ylabel("Mean water value, EUR/MWh (symlog)")
+ax[1].set_title("Price and water value by case")
+for lab, col in (("Train", BLUE), ("Test", ORANGE)):
+    ax[1].scatter([], [], s=20, c=col, label=lab)
+ax[1].legend()
+plt.show()
+print("Correlation between weekly mean price and mean water value:", round(float(np.corrcoef(P.mean(1), wv.mean(1))[0, 1]), 2))
+print("Correlation between reservoirs' water values, min and median:", round(float(wvc.min()), 2), round(float(np.median(wvc)), 2))
+print("Share of hours with a non-zero minimum flow:", {k: round(float(v), 2) for k, v in zip(MINFLOW, (c["minflow"] > 0).mean((0, 1)))})
+print("Share of hours with a non-zero minimum volume:", {k: round(float(v), 2) for k, v in zip(MINVOL, (c["minvol"] > 0).mean((0, 1)))})
 print("Reservoir fill, mean over days:", {k: round(float(v), 2) for k, v in zip(RES, (vmat / mx).mean(0))})
 
 # %% [markdown]
@@ -266,7 +360,8 @@ print("Reservoir fill, mean over days:", {k: round(float(v), 2) for k, v in zip(
 # **Adversarial validation.** To test the last point more strictly, I trained a classifier to tell test hours from training hours. If it cannot (AUC near 0.5), the test years look like the training years. Training and validation alternate in 60-day blocks, so overlapping cases stay together. Calendar and unit columns are left out, since dates alone would let the classifier memorise which period is test.
 
 # %%
-dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(auc=lambda d: d.auc.astype(float).round(3)).rename_axis("Feature set").rename(columns={"n": "columns", "auc": "adversarial AUC", "top": "most used columns"}))
+dr = json.load(open("artifacts/drift.json"))
+display(pd.DataFrame(dr).T.assign(auc=lambda d: d.auc.astype(float).round(3)).rename_axis("Feature set").rename(columns={"n": "columns", "auc": "adversarial AUC", "top": "most used columns"}))
 
 # %% [markdown]
 # No feature set comes close to 0.5: the test years are clearly different, so every model has to extrapolate. Without the absolute price columns the classifier's AUC falls from 0.953 to 0.923, and the LP columns alone give 0.861, the most similar between the two periods. A first version that included calendar columns gave impossible results (a larger feature set scoring below a subset of itself), which exposed the memorisation and led to the setup above. Drift did not decide anything by itself: the neural network kept the absolute price columns because validation favoured them (Section 5.3).
@@ -330,7 +425,7 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 #
 # Scores are on all 2922 training cases, with no model trained. The *power fraction* (power divided by maximum power) ranks a little better than the on/off value, so both are used as features. The telescoping step (0.743 to 0.932) is by far the largest. Forcing whole on/off decisions for all units (an integer program, MILP) made the plan worse, and its features did not help the trees (L3). The final features use three solves per case: the water values as given, and scaled by 0.9 and 1.1 (Section 5.2).
 #
-# **Version 5: two corrections found late.** Comparing the LP's plan with SHOP's unit by unit, two days before the deadline, showed two places where the LP solved a different problem from SHOP:
+# **Version 5: two corrections found late.** Comparing the LP's plan with SHOP's unit by unit, late in the project, showed two places where the LP solved a different problem from SHOP:
 #
 # 1. *River costs.* The four main rivers have a flow cost curve in the YAML file. SHOP's documentation describes it as piecewise constant: the cost per m3/s is 1 up to 40 m3/s, 65 from 40 to 100, 239 from 100 to 200, and so on. Version 4 read the curve as a total cost and charged its first slope, (65 - 1) / 40 = 1.6 per m3/s, at every flow, so it sent more than 40 m3/s down the river below Hyljelihyl in 23 % of hours. Version 5 uses the whole curve, which brings this to 0.3 %.
 # 2. *Lio and the minimum flow.* Lio's water goes to `r_Vest_Vassdraget`, which has a minimum flow. With on/off relaxed, the LP met that minimum by running Lio partly "on" in 29 % of Lio's hours (the middle half of these values lie between 0.30 and 0.41), and in 87 % of those hours below Lio's minimum output of 14.8 MW. SHOP cannot do this. Version 5 makes Lio's 168 on/off values whole numbers, solves that small integer problem, fixes Lio's schedule and solves the LP again to get the shadow prices used as features.
@@ -340,7 +435,8 @@ dr = json.load(open("artifacts/drift.json")); display(pd.DataFrame(dr).T.assign(
 # The table below lists the feature groups of the final models. The six absolute price columns printed under it are used only by the neural network in notebook 1.
 
 # %%
-interp = json.load(open("artifacts/interp_final.json")); G = interp["groups"]
+interp = json.load(open("artifacts/interp_final.json"))
+G = interp["groups"]
 display(pd.DataFrame([dict(group=k, columns=len(v), examples=", ".join(v[:7]) + (" ..." if len(v) > 7 else "")) for k, v in G.items()]).set_index("group"))
 print("Dropped from trees (ST-Net in notebook 1 keeps them):", open("artifacts/scale_cols.txt").read().strip())
 
@@ -363,16 +459,17 @@ print("Dropped from trees (ST-Net in notebook 1 keeps them):", open("artifacts/s
 
 # %%
 def row(n, ref=None):
-    r = rows[n]; return r["oof_auc"], (r["oof_auc"] - rows[ref]["oof_auc"]) if ref else np.nan
-T = [("Add `ls_*` (trees)", "XR_ls", "XR_min", "XR_ls_f", "XR_min_f", "Accepted. 66 features, 7/8 years"),
-     ("Add `ls_*`, keep `mf_*`, `lps_*` (trees)", "XR_sens2", "XR_ref", "XR_sens_f2", "XR_ref_f", "Passes, but no better than the row above with 13 fewer features"),
-     ("Drop `mf_*` constraint columns (trees)", "XR_nomf", "XR_ref", "XR_nomf_f", "XR_ref_f", "Inside noise, dropped for simplicity"),
-     ("Drop `lps_*` plant shares (trees)", "XR_nolps", "XR_ref", "XR_nolps_f", "XR_ref_f", "Inside noise, dropped for simplicity"),
+    r = rows[n]
+    return r["oof_auc"], (r["oof_auc"] - rows[ref]["oof_auc"]) if ref else np.nan
+T = [("Add ls_* (trees)", "XR_ls", "XR_min", "XR_ls_f", "XR_min_f", "Accepted. 66 features, 7/8 years"),
+     ("Add ls_*, keep mf_*, lps_* (trees)", "XR_sens2", "XR_ref", "XR_sens_f2", "XR_ref_f", "Passes, but no better than the row above with 13 fewer features"),
+     ("Drop mf_* constraint columns (trees)", "XR_nomf", "XR_ref", "XR_nomf_f", "XR_ref_f", "Inside noise, dropped for simplicity"),
+     ("Drop lps_* plant shares (trees)", "XR_nolps", "XR_ref", "XR_nolps_f", "XR_ref_f", "Inside noise, dropped for simplicity"),
      ("Drop both (trees)", "XR_min", "XR_ref", "XR_min_f", "XR_ref_f", "No change, 59 vs 72 features"),
      ("Keep absolute price columns (trees)", "XR_scale", "XR_ref", "XR_scale_f", "XR_ref_f", "Inside noise, so left out of the trees"),
      ("Keep absolute price columns (net)", "N4_v4_scale", "N3_v4_mf", "N4f_e24_scale", "N3f3_e24", "Forward +0.0007 (mostly 2020), LOYO within net seed noise. Kept in the net in notebook 1"),
-     ("`base,lp,ls` only (net)", "N6_min", "N4_v4_scale", "N6f_min", "N4f_e24_scale", "Accepted. 7/8 years, 4/4 forward"),
-     ("Add `ls_*`, keep `mf_*`, `lps_*` (net)", "N5_ls", "N4_v4_scale", "N5f_ls", "N4f_e24_scale", "Fails, 4/8 years"),
+     ("base,lp,ls only (net)", "N6_min", "N4_v4_scale", "N6f_min", "N4f_e24_scale", "Accepted. 7/8 years, 4/4 forward"),
+     ("Add ls_*, keep mf_*, lps_* (net)", "N5_ls", "N4_v4_scale", "N5f_ls", "N4f_e24_scale", "Fails, 4/8 years"),
      ("Drop absolute price columns again (net, hedge)", "N7_noabs", "N6_min", "N7f_noabs", "N6f_min", "Fails the gate by design. Used as the hedge in notebook 2"),
      ("LP v5 instead of v4 (trees, CPU)", "XR5c_ls", "XRc_ls", "XR5c_ls_f", "XRc_ls_f", "Accepted. 8/8 years, 4/4 forward"),
      ("LP v5 instead of v4 (net, CPU)", "N6c_v5", "N6c_v4", "N6fc_v5", "N6fc_v4", "Accepted. 7/8 years (2015 equal), 4/4 forward"),
@@ -385,9 +482,9 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 # - **Absolute price levels helped the network on LP v4, not the trees.** I expected that removing them would help everywhere, since they are what drifts most between training and test years. For the trees they made no difference, so I left them out. For the neural network they raised forward AUC by 0.0007, mostly through 2020, so the network in notebook 1 keeps them. The LOYO gain (+0.00023) was smaller than the network's seed noise (up to 0.00035, Section 7), so the evidence rests on forward validation. On LP v5 the difference is gone: without these columns the network scores 0.99366 against 0.99373 in LOYO and 0.99323 against 0.99307 in forward validation (Section 6.2). Notebook 2 hedges this decision.
 # - **Fewer columns helped the network.** Adding `ls_*` while keeping `mf_*` and `lps_*` failed for the network (4/8 years). Adding `ls_*` and removing those two passed clearly (+0.00064 LOYO, 7/8 years, 4/4 forward years). For the trees the two groups made no difference either way, so both final models use the smaller set `base,lp,ls`.
 #
-# **LP v5 helped every model.** The last three rows compare the same models on LP v5 and LP v4 (Section 5.1). No GPU was available in the last two days before the deadline, so both versions were trained on CPU nodes for this comparison. The CPU runs on LP v4 reproduce the earlier GPU runs within 0.00002, so the two sets are comparable. LP v5 raised XGBoost by 0.00040 (8/8 years), the network by 0.00041 and the hedge network by 0.00046, all passing the gate, and the notebook 1 blend from 0.99399 to 0.99430 in LOYO and from 0.99375 to 0.99404 in forward validation (3 of 4 years; 2019 fell by 0.00003). The LP's own AUC barely changed (0.9576 to 0.9574), so that number was a poor guide to which LP helps the models. The largest gains are for Kjela and Lio (Section 9).
+# **LP v5 helped every model.** The last three rows compare the same models on LP v5 and LP v4 (Section 5.1). Both versions were trained on CPU nodes for this comparison, since no GPU was available at the end of the project; the CPU runs on LP v4 reproduce the earlier GPU runs within 0.00002, so the two sets are comparable. LP v5 raised XGBoost, the network and the hedge network by about 0.0004 each in LOYO, all passing the gate, and the notebook 1 blend by 0.0003 in both LOYO and forward validation (3 of 4 forward years; 2019 fell by 0.00003). The LP's own AUC barely changed (0.9576 to 0.9574), so that number was a poor guide to which LP helps the models. Per unit, Kjela gains most (blend 0.9889 to 0.9914), followed by Haukeli and Lio (+0.0006 each). The weakest unit-year on LP v4, Lio in 2022, rose from 0.964 to 0.980, which fits the Lio correction.
 #
-# **The public leaderboard agreed.** I accepted LP v5 by the rule above before the new files were submitted. Their public scores came afterwards: notebook 1 rose from 0.99638 to 0.99651 and notebook 2 from 0.99635 to 0.99649. That gain (+0.00013 and +0.00014) is smaller than in validation (about +0.0003), but in the same direction, on test years the LP's design never saw.
+# **The public leaderboard agreed.** I accepted LP v5 by the rule above before the new files were submitted. Their public scores came afterwards and rose by about 0.00013 for both notebooks (notebook 1 from 0.99638 to 0.99651). That is smaller than in validation (about +0.0003), but in the same direction, on test years the LP's design never saw.
 
 # %% [markdown]
 # ## 6. All models and algorithms tried
@@ -435,7 +532,7 @@ display(pd.DataFrame([{"Change": a, "LOYO": rows[n]["oof_auc"], "d LOYO": rows[n
 #
 # ### 6.2 Phase 2: with the LP
 #
-# With the LP features in place, I tested the same model types again. The numbers are read from the experiment log, in the order the runs were made. `LOYO` and `Forward` are the two validation schemes from Section 4, and empty cells were not run. *e24* means 24 training epochs.
+# With the LP features in place, I tested the same model types again. The numbers are read from the experiment log, in the order the runs were made, each under its run ID. `LOYO` and `Forward` are the two validation schemes from Section 4, and a dash means the run was not made in that scheme. *e24* means 24 training epochs.
 
 # %%
 DESC = [("L0_base", "L0_base_fwd", "LightGBM", "No LP, base features", "Reference for what the LP adds. New code, 29 features, 1 seed, so not identical to E000"),
@@ -448,7 +545,7 @@ DESC = [("L0_base", "L0_base_fwd", "LightGBM", "No LP, base features", "Referenc
     ("L6_v3_noscale", None, "LightGBM", "LP v3, no absolute prices", "Inside noise"),
     ("L7_v4_mf", None, "LightGBM", "LP v4 + required flow columns", "Adopted LP v4"),
     ("L8_v4", None, "LightGBM", "LP v4", "Reference"),
-    ("L9_v4_mf_s3", "L10f", "LightGBM", "LP v4 + `mf_*`, 3 seeds", "Blend member in B2"),
+    ("L9_v4_mf_s3", "L10f", "LightGBM", "LP v4 + mf_*, 3 seeds", "Blend member in B2"),
     ("X1_v4_mf", "X1f_fwd", "XGBoost", "Same features", "Blend member in B2. Fast on GPU, so became the main tree"),
     ("C1_v4_mf", "C2f", "CatBoost", "Same features", "Blend member in B2. Weak forward, dropped later"),
     ("N1_stnet_lp", None, "ST-Net", "LP v2, 1 seed", "First LP net"),
@@ -460,37 +557,56 @@ DESC = [("L0_base", "L0_base_fwd", "LightGBM", "No LP, base features", "Referenc
     (None, "N10f_e8", "ST-Net", "e8", "Rejected, too few epochs"),
     (None, "N11f_e16", "ST-Net", "e16", "Equal to e24 without prices. Not pursued"),
     (None, "N12f_d96", "ST-Net", "d=96 instead of 64", "Rejected, R15, 1/4 years"),
-    ("N5_ls", "N5f_ls", "ST-Net", "Keep all + `ls_*`", "Gate fail, R19"),
-    ("N6_min", "N6f_min", "ST-Net", "`base,lp,ls`", "Accepted. Final net on LP v4"),
-    ("N7_noabs", "N7f_noabs", "ST-Net", "`base,lp,ls`, no absolute prices", "Hedge on LP v4"),
+    ("N5_ls", "N5f_ls", "ST-Net", "Keep all + ls_*", "Gate fail, R19"),
+    ("N6_min", "N6f_min", "ST-Net", "base,lp,ls", "Accepted. Final net on LP v4"),
+    ("N7_noabs", "N7f_noabs", "ST-Net", "base,lp,ls, no absolute prices", "Hedge on LP v4"),
     (None, "P1f_pseudo", "XGBoost", "Pseudo-labels from validation year", "Rejected, no gain over the same XGBoost without them (0.99297)"),
     ("XR_ref", "XR_ref_f", "XGBoost", "Clean reference, 72 columns, 5 seeds", "Gate reference, seed noise measured here"),
     ("XR_r800", "XR_r800_f", "XGBoost", "eta 0.04, 800 rounds", "Rejected, R13, inside noise"),
-    ("XR_ls", "XR_ls_f", "XGBoost", "`base,lp,ls`, no absolute prices", "Accepted. Final trees on LP v4"),
+    ("XR_ls", "XR_ls_f", "XGBoost", "base,lp,ls, no absolute prices", "Accepted. Final trees on LP v4"),
     ("XRc_ls", "XRc_ls_f", "XGBoost (CPU)", "As XR_ls, trained on CPU", "LP v4 reference for v5. Within 0.00002 of XR_ls"),
     ("N6c_v4", "N6fc_v4", "ST-Net (CPU)", "As N6_min, trained on CPU", "LP v4 reference for v5. Within 0.00001 of N6_min"),
     ("N7c_v4", "N7fc_v4", "ST-Net (CPU)", "As N7_noabs, trained on CPU", "LP v4 reference for v5. Equal to N7_noabs"),
-    ("XR5c_ls", "XR5c_ls_f", "XGBoost (CPU)", "`base,lp,ls` on LP v5", "**Accepted. Final trees**"),
-    ("N6c_v5", "N6fc_v5", "ST-Net (CPU)", "`base,lp,ls` on LP v5", "**Accepted. Final net, notebook 1**"),
-    ("N7c_v5", "N7fc_v5", "ST-Net (CPU)", "`base,lp,ls` on LP v5, no absolute prices", "**Hedge, notebook 2**")]
-tab = pd.DataFrame([dict(Model=m, Features=f, LOYO=rows[a]["oof_auc"] if a else np.nan, Forward=rows[b]["oof_auc"] if b else np.nan, Note=n) for a, b, m, f, n in DESC]).round(5); display(tab)
+    ("XR5c_ls", "XR5c_ls_f", "XGBoost (CPU)", "base,lp,ls on LP v5", "Accepted. Final trees"),
+    ("N6c_v5", "N6fc_v5", "ST-Net (CPU)", "base,lp,ls on LP v5", "Accepted. Final net, notebook 1"),
+    ("N7c_v5", "N7fc_v5", "ST-Net (CPU)", "base,lp,ls on LP v5, no absolute prices", "Hedge, notebook 2")]
+num = lambda n: f"{rows[n]['oof_auc']:.5f}" if n else "-"  # "-": not run in that validation scheme
+tab = pd.DataFrame([dict(Run=a or b, Model=m, Features=f, LOYO=num(a), Forward=num(b), Note=n) for a, b, m, f, n in DESC]).set_index("Run")
+display(tab)
 
 # %% [markdown]
-# The figure below puts both phases on one axis.
+# The figure below puts both phases on one axis. The axis is logarithmic in the error, 1 - AUC, so that the models near the top can be told apart: each step on the axis is the same relative reduction in error.
 
 # %%
 pts = [("Logistic regression*", .89708, 0), ("Random forest*", .93927, 0), ("LightGBM, base (E000)", .95415, 0), ("LP v5 alone, power fraction (no training)", auc(Y, LPF[:N_TR]), 2), ("UC-Net (E008)", .95893, 0), ("LightGBM, physics features (E009)", .96295, 0), ("LightGBM + neighbours (E013)", .97919, 0), ("LightGBM, whole system (E026)", .98118, 0), ("ST-Net (E019)", .98199, 0), ("LightGBM + UC-Net (E012)", .97847, 0), ("LightGBM + ST-Net (E021a)", .98584, 0),
     ("LightGBM + LP v4", rows["L8_v4"]["oof_auc"], 1), ("CatBoost + LP v4", rows["C1_v4_mf"]["oof_auc"], 1), ("XGBoost + LP v4", rows["XR_ref"]["oof_auc"], 1), ("ST-Net + LP v4", rows["N4_v4_scale"]["oof_auc"], 1), ("XGBoost final trees, LP v5", rows["XR5c_ls"]["oof_auc"], 1), ("ST-Net final, LP v5", rows["N6c_v5"]["oof_auc"], 1), ("Blend B2", rows["B2_gbdt3_nn2_nested"]["oof_auc"], 1), ("Blend on LP v4", auc(Y, B4), 1), ("Final blend, notebook 1", auc(Y, B), 1)]
-pts = sorted(pts, key=lambda p: p[1]); cols = [BLUE, ORANGE, YELLOW]; fig, ax = plt.subplots(figsize=(9, 5.4))
-ax.hlines(range(len(pts)), .88, [p[1] for p in pts], color=GRID, lw=1); ax.scatter([p[1] for p in pts], range(len(pts)), s=42, c=[cols[p[2]] for p in pts], zorder=3, edgecolors="#fcfcfb", linewidths=1.5); ax.set_yticks(range(len(pts)), [p[0] for p in pts]); ax.set_xlim(.885, 1.0); ax.set_xlabel("Cross-validated AUC, LOYO"); ax.grid(axis="y", visible=False); ax.set_title("With the LP, every model scores above the best earlier blend")
-for k, p in enumerate(pts): ax.text(p[1] + .0015, k, f"{p[1]:.4f}", va="center", fontsize=7.5, color=MUTED)
-for lab, col in (("Without LP", BLUE), ("With LP", ORANGE), ("LP alone", YELLOW)): ax.scatter([], [], s=30, c=col, label=lab)
-ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not all 8 years, so not directly comparable with the others.")
+pts = sorted(pts, key=lambda p: p[1])
+cols = [BLUE, ORANGE, YELLOW]
+fig, ax = plt.subplots(figsize=(9, 5.4))
+err = [1 - p[1] for p in pts]  # plotted as error 1 - AUC on a log axis
+ax.set_xscale("log")
+ax.set_xlim(.13, .0035)
+ticks = [.1, .05, .02, .01, .005]
+ax.set_xticks(ticks, [f"{1 - t:g}" for t in ticks])
+ax.minorticks_off()
+ax.hlines(range(len(pts)), .13, err, color=GRID, lw=1)
+ax.scatter(err, range(len(pts)), s=42, c=[cols[p[2]] for p in pts], zorder=3, edgecolors="#fcfcfb", linewidths=1.5)
+ax.set_yticks(range(len(pts)), [p[0] for p in pts])
+ax.set_xlabel("Cross-validated AUC, LOYO (axis logarithmic in 1 - AUC)")
+ax.grid(axis="y", visible=False)
+ax.set_title("With the LP, every model scores above the best earlier blend")
+for k, p in enumerate(pts):
+    ax.text(err[k] * .93, k, f"{p[1]:.4f}", va="center", fontsize=7.5, color=MUTED)
+for lab, col in (("Without LP", BLUE), ("With LP", ORANGE), ("LP alone", YELLOW)):
+    ax.scatter([], [], s=30, c=col, label=lab)
+ax.legend(loc="lower right")
+plt.show()
+print("* Three tuning folds only, not all 8 years, so not directly comparable with the others.")
 
 # %% [markdown]
 # Every model with the LP features (orange) scores above the best blend from Phase 1. The model type matters much less than the features: with the LP, LightGBM, XGBoost, CatBoost and ST-Net all lie within 0.001 of each other.
 #
-# **Choosing the blend.** Blends with weights chosen nested in forward validation (R16) gave 0.99329 for XGBoost + network, and 0.99334 when CatBoost was added, a difference below the noise level. Adding LightGBM or a network without price columns did not help either. I therefore kept the simplest blend: two members of different types, gradient-boosted trees (XGBoost) and a neural network (ST-Net). Their predictions correlate at 0.97 in log-odds, but the blend still matches or beats both on every unit (Section 9).
+# **Choosing the blend.** Blends with weights chosen nested in forward validation (R16) gave 0.99329 for XGBoost + network, and 0.99334 when CatBoost was added, a difference below the noise level. Adding LightGBM or a network without price columns did not help either. I therefore kept the simplest blend: two members of different types, gradient-boosted trees (XGBoost) and a neural network (ST-Net). Their predictions correlate at 0.97 in log-odds, but the blend still matches or beats both on 13 of 14 units (Section 9).
 #
 # **Ideas proposed but not run.** (P1) Creating training data with negative prices by pushing the cheapest hours below zero and labelling them with the LP, and (P2) scaling price and water values together as data augmentation. I judged both unlikely to help. Changing the inputs can change the correct label. Overlapping cases already act as shifted copies of each other. And cases labelled by the LP lack exactly the difference between SHOP and the LP that the models are meant to learn. P1 also could not be validated, since the validation years contain almost no negative prices.
 
@@ -516,12 +632,14 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # |---|---|---|
 # | Epochs | 24 | Beats 12 epochs on two seed sets, in LOYO and forward (R20) |
 # | `d`, blocks, heads | 64, 4, 4 | Sized for repeated runs. d=96 was worse (R15, 1/4 years) |
-# | Dropout, weight decay | 0.1, 0.01 | From E019. Two alternatives were tried with one seed in forward validation: dropout 0.25 (+0.00016) and weight decay 0.1 with dropout 0.2 and 16 epochs (+0.0006), both against a one-seed run of the current values. That run was itself 0.0012 below the current values with 3 seeds (R10), so both gains are within seed noise. They were not repeated with 3 seeds, so the current values are kept, not shown to be best |
+# | Dropout, weight decay | 0.1, 0.01 | From E019. Alternatives were within seed noise (see below the table) |
 # | Learning rate, batch, EMA | 1e-3, 32, 0.995 | From E008 and E019 |
 # | Warmup, decay, gradient clip | 5 % of steps, cosine, norm 1.0 | From E008 |
 # | Input clipping | ±6 standard deviations | Set by hand. Not tuned |
 # | Auxiliary weight | 0.3 | From E008 |
 # | Seeds | 3 | Seed sets differ by up to 0.00035 alone, but barely in the blend. Six add nothing (R14) |
+#
+# *Dropout and weight decay.* Two alternatives were tried with one seed in forward validation: dropout 0.25 (+0.00016) and weight decay 0.1 with dropout 0.2 and 16 epochs (+0.0006), both against a one-seed run of the current values. That run was itself 0.0012 below the current values with 3 seeds (R10), so both gains are within seed noise. They were not repeated with 3 seeds, so the current values are kept, not shown to be best.
 #
 # **LP.** Flow costs, start costs, curves and limits come from the system's YAML file, including the main rivers' flow cost curves. The remaining constants:
 #
@@ -541,7 +659,9 @@ ax.legend(loc="lower right"); plt.show(); print("* Three tuning folds only, not 
 # **Blend weight.** 0.7 for XGBoost and 0.3 for ST-Net, fixed before the last round of experiments. The table below shows that validation is flat between 0.6 and 0.8, and nested weights on an earlier set of models were 0.65-0.70 in every fold. The final weight itself was not chosen nested.
 
 # %%
-f = lambda a, b, w: w * a + (1 - w) * b; okf = np.isfinite(XF).all((1, 2)); W = [.5, .6, .7, .8, .9, 1.]
+f = lambda a, b, w: w * a + (1 - w) * b
+okf = np.isfinite(XF).all((1, 2))
+W = [.5, .6, .7, .8, .9, 1.]
 display(pd.DataFrame({"Tree weight": W, "LOYO": [auc(Y, f(XT, NT, w)) for w in W], "Forward": [auc(Y[okf], f(XF, NF, w)[okf]) for w in W]}).round(5).set_index("Tree weight").T)
 print("Correlation between tree and net logits:", round(np.corrcoef(XT.ravel(), NT.ravel())[0, 1], 3))
 
@@ -554,16 +674,30 @@ print("Correlation between tree and net logits:", round(np.corrcoef(XT.ravel(), 
 # - **Partial dependence** (8.1): how the prediction changes on average when one feature is varied.
 # - **Permutation importance** (8.3): how much the score drops when a feature is scrambled. Computed for both models and the blend.
 #
-# Sections 8.1-8.3 use models on LP v5, trained before 2022 on CPU and explained on 2022, which they did not see, with seed 0. Section 8.4 uses the out-of-fold LOYO blend.
+# Sections 8.1-8.3 use the final model types, trained before 2022 and explained on 2022, which they did not see, with seed 0. Section 8.4 uses the out-of-fold LOYO blend.
 #
 # ### 8.1 SHAP on the trees
 
 # %%
-S = np.load("artifacts/shap_final.npz", allow_pickle=True); sj = json.load(open("artifacts/shap_final.json")); nm = S["names"]; imp = S["imp"]; o = np.argsort(-imp)[:20][::-1]; gc = {"base": BLUE, "lp": ORANGE, "ls": AQUA}
-fig, ax = plt.subplots(figsize=(8.5, 4.8)); ax.barh(range(20), imp[o], color=[gc[group(nm[k])] for k in o], height=.72); ax.set_yticks(range(20), nm[o]); ax.set_xlabel("Mean |SHAP|, log-odds"); ax.grid(axis="y", visible=False); ax.set_title("Top 20 features in the final XGBoost")
-for lab, gg in (("Base", "base"), ("LP schedule", "lp"), ("LP sensitivity", "ls")): ax.barh([0], [0], color=gc[gg], label=lab)
-ax.legend(loc="lower right"); plt.show(); print("Share of total mean |SHAP| by group:", {k: round(v, 3) for k, v in sj["groups"].items()})
-g_ = sj["gain"]; print("Top 8 by gain:", sorted(g_, key=g_.get, reverse=True)[:8])
+S = np.load("artifacts/shap_final.npz", allow_pickle=True)
+sj = json.load(open("artifacts/shap_final.json"))
+nm = S["names"]
+imp = S["imp"]
+o = np.argsort(-imp)[:20][::-1]
+gc = {"base": BLUE, "lp": ORANGE, "ls": AQUA}
+fig, ax = plt.subplots(figsize=(8.5, 4.8))
+ax.barh(range(20), imp[o], color=[gc[group(nm[k])] for k in o], height=.72)
+ax.set_yticks(range(20), nm[o])
+ax.set_xlabel("Mean |SHAP|, log-odds")
+ax.grid(axis="y", visible=False)
+ax.set_title("Top 20 features in the final XGBoost")
+for lab, gg in (("Base", "base"), ("LP schedule", "lp"), ("LP sensitivity", "ls")):
+    ax.barh([0], [0], color=gc[gg], label=lab)
+ax.legend(loc="lower right")
+plt.show()
+print("Share of total mean |SHAP| by group:", {k: round(v, 3) for k, v in sj["groups"].items()})
+g_ = sj["gain"]
+print("Top 8 by gain:", sorted(g_, key=g_.get, reverse=True)[:8])
 
 # %% [markdown]
 # LP features hold 78 % of the total attribution (LP schedule 58 %, LP sensitivity 20 %). The model builds on the LP's plan, as intended.
@@ -576,13 +710,27 @@ g_ = sj["gain"]; print("Top 8 by gain:", sorted(g_, key=g_.get, reverse=True)[:8
 # XGBoost's built-in importance (gain) ranks `lp_u_roll5` and `lp_u` first instead, because a few early splits with large gain use them. SHAP measures the effect on every prediction, so I rely on SHAP.
 
 # %%
-top = [str(x) for x in nm[S["top"]]]; show = ["ls_mean", "lp_margin_ratio", "lp_margin_roll5", "lp_sys_t", "lp_u", "start_hours_wv"]; fig, axs = plt.subplots(2, 3, figsize=(11, 5.4), gridspec_kw=dict(hspace=.35, wspace=.22))
+top = [str(x) for x in nm[S["top"]]]
+show = ["ls_mean", "lp_margin_ratio", "lp_margin_roll5", "lp_sys_t", "lp_u", "start_hours_wv"]
+fig, axs = plt.subplots(2, 3, figsize=(11, 5.4), gridspec_kw=dict(hspace=.35, wspace=.22))
 for ax, n in zip(axs.ravel(), show):
-    j = top.index(n); x, s = S["x"][:, j], S["sv"][:, j]; hi = np.quantile(x, .995); lo = np.quantile(x, .005); ax.scatter(x, s, s=3, alpha=.18, c=BLUE, linewidths=0); ax.set_xlim(*{"lp_margin_ratio": (0, 4), "start_hours_wv": (-.05, 2)}.get(n, (lo - (hi - lo) * .03, hi + (hi - lo) * .03))); ax.axhline(0, color=MUTED, lw=.8); ax.set_title(n)
+    j = top.index(n)
+    x, s = S["x"][:, j], S["sv"][:, j]
+    hi = np.quantile(x, .995)
+    lo = np.quantile(x, .005)
+    ax.scatter(x, s, s=3, alpha=.18, c=BLUE, linewidths=0)
+    ax.set_xlim(*{"lp_margin_ratio": (0, 4), "start_hours_wv": (-.05, 2)}.get(n, (lo - (hi - lo) * .03, hi + (hi - lo) * .03)))
+    ax.axhline(0, color=MUTED, lw=.8)
+    ax.set_title(n)
     if n in interp["pdp"]:
-        q = interp["pdp"][n]; base_ = np.mean(q["y"]); ax.plot(q["x"], np.array(q["y"]) - base_, color=ORANGE, label="Partial dependence, centred")
+        q = interp["pdp"][n]
+        base_ = np.mean(q["y"])
+        ax.plot(q["x"], np.array(q["y"]) - base_, color=ORANGE, label="Partial dependence, centred")
         ax.legend(loc="best")
-axs[0, 0].set_ylabel("SHAP, log-odds"); axs[1, 0].set_ylabel("SHAP, log-odds"); fig.suptitle("SHAP dependence and partial dependence", fontsize=11, fontweight="bold", x=.09, ha="left", y=.96); plt.show()
+axs[0, 0].set_ylabel("SHAP, log-odds")
+axs[1, 0].set_ylabel("SHAP, log-odds")
+fig.suptitle("SHAP dependence and partial dependence", fontsize=11, fontweight="bold", x=.09, ha="left", y=.96)
+plt.show()
 
 # %% [markdown]
 # Each blue dot is one prediction: the feature's value (x axis) against how much it pushed that prediction, in log-odds (y axis). The orange line is partial dependence, centred at zero.
@@ -597,7 +745,14 @@ axs[0, 0].set_ylabel("SHAP, log-odds"); axs[1, 0].set_ylabel("SHAP, log-odds"); 
 # Does the model rely on the same features for every unit?
 
 # %%
-un = S["unit"]; ks = [top.index(n) for n in top[:12]]; M = np.array([[np.abs(S["sv"][un == g_, k]).mean() for k in ks] for g_ in range(14)]); fig, ax = plt.subplots(figsize=(11, 4.6)); heat(ax, M, [top[k] for k in ks], UNITS, "Mean |SHAP| by unit and feature, top 12 features", fmt="{:.2f}"); ax.tick_params(axis="x", rotation=40); plt.setp(ax.get_xticklabels(), ha="right"); plt.show()
+un = S["unit"]
+ks = [top.index(n) for n in top[:12]]
+M = np.array([[np.abs(S["sv"][un == g_, k]).mean() for k in ks] for g_ in range(14)])
+fig, ax = plt.subplots(figsize=(11, 4.6))
+heat(ax, M, [top[k] for k in ks], UNITS, "Mean |SHAP| by unit and feature, top 12 features", fmt="{:.2f}")
+ax.tick_params(axis="x", rotation=40)
+plt.setp(ax.get_xticklabels(), ha="right")
+plt.show()
 
 # %% [markdown]
 # Mostly yes. `ls_mean` is the most important feature for every unit. `unit_index` matters most for units late in the start order (Tokke G4 0.88, Vinje G3 0.82), which only run when the units ahead of them are already on. `start_hours_wv` matters least for Haukeli (0.06), which rarely switches (0.5 switches per week, Section 3.4).
@@ -609,32 +764,67 @@ un = S["unit"]; ks = [top.index(n) for n in top[:12]]; M = np.array([[np.abs(S["
 # Hypothesis, written in the log before the run: both models rely mainly on the LP schedule, and the network loses more than the trees when market columns are shuffled, because only the network sees absolute price levels.
 
 # %%
-gi = pd.DataFrame(interp["group"]).T[["xgb", "net", "blend"]]; gi["columns"] = [len(G[k]) for k in gi.index]; print("Unshuffled AUC on 2022, seed 0:", {k: round(v, 5) for k, v in interp["base"].items()}); display(gi.sort_values("blend").round(5).rename_axis("Shuffled group"))
-si = pd.DataFrame(interp["single"]).T; si = si.sort_values("blend").head(15)[::-1]; fig, ax = plt.subplots(figsize=(9, 4.8)); yy = np.arange(len(si)); w_ = .26
-for k, (m_, col) in enumerate((("xgb", BLUE), ("net", ORANGE), ("blend", AQUA))): ax.barh(yy + (k - 1) * w_, -si[m_], height=w_ * .9, color=col, label={"xgb": "XGBoost", "net": "ST-Net", "blend": "Blend"}[m_])
-ax.set_yticks(yy, si.index); ax.grid(axis="y", visible=False); ax.set_xlabel("Loss in AUC when this one feature is shuffled"); ax.set_title("Top 15 single features by loss in the blend, on 2022"); hl, lb = ax.get_legend_handles_labels(); ax.legend(hl[::-1], lb[::-1], loc="lower right"); plt.show()
+gi = pd.DataFrame(interp["group"]).T[["xgb", "net", "blend"]]
+gi["columns"] = [len(G[k]) for k in gi.index]
+print("Unshuffled AUC on 2022, seed 0:", {k: round(v, 5) for k, v in interp["base"].items()})
+display(gi.sort_values("blend").round(5).rename_axis("Shuffled group"))
+si = pd.DataFrame(interp["single"]).T
+si = si.sort_values("blend").head(15)[::-1]
+fig, ax = plt.subplots(figsize=(9, 4.8))
+yy = np.arange(len(si))
+w_ = .26
+loss = -si[["xgb", "net", "blend"]]
+cut = float(np.sort(loss.values.ravel())[-2]) * 1.3  # the axis is cut above the second largest loss
+for k, (m_, col) in enumerate((("xgb", BLUE), ("net", ORANGE), ("blend", AQUA))):
+    ax.barh(yy + (k - 1) * w_, np.minimum(loss[m_], cut), height=w_ * .9, color=col, label={"xgb": "XGBoost", "net": "ST-Net", "blend": "Blend"}[m_])
+    for j in np.where(loss[m_].values > cut)[0]:
+        ax.text(cut, yy[j] + (k - 1) * w_, f"  {loss[m_].values[j]:.3f} (axis cut)", va="center", fontsize=7.5, color=MUTED)
+ax.set_xlim(min(0., float(loss.values.min()) * 1.2), cut * 1.4)
+ax.set_yticks(yy, si.index)
+ax.grid(axis="y", visible=False)
+ax.set_xlabel("Loss in AUC when this one feature is shuffled")
+ax.set_title("Top 15 single features by loss in the blend, on 2022")
+hl, lb = ax.get_legend_handles_labels()
+ax.legend(hl[::-1], lb[::-1], loc="lower right")
+plt.show()
 
 # %% [markdown]
-# The hypothesis held (it was tested on LP v4 and holds on v5 as well). Shuffling the LP schedule costs 0.25 AUC in the trees and 0.28 in the network, far more than any other group, and LP sensitivity follows with about 0.01. Shuffling the market columns costs the network 0.0077 but the trees only 0.0005.
+# The hypothesis held. Shuffling the LP schedule costs 0.25 AUC in the trees and 0.28 in the network, far more than any other group, and LP sensitivity follows with about 0.01. Shuffling the market columns costs the network 0.0077 but the trees only 0.0005.
 #
 # One result was not predicted: the network loses 0.091 when the unit group is shuffled, and 0.074 from `unit_index` alone, although it also has a learned embedding for each unit. A possible reason, not tested: `unit_index` never varies apart from the unit embedding in training, so shuffling creates combinations the network has never seen, and the drop measures extrapolation more than reliance. The blend loses only 0.0022 on that column.
 #
-# Single features cost at most about 0.002 in the blend, because LP columns can stand in for each other. The group table is therefore the better guide. Single features use one shuffle and one seed, so differences below about 0.0002 are not meaningful.
+# Single features cost at most about 0.002 in the blend, because LP columns can stand in for each other. The group table is therefore the better guide. Single features use one shuffle and one seed, so differences below about 0.0002 are not meaningful. In the figure the axis is cut so the small bars stay readable, and the network's bar for `unit_index` carries its value.
 
 # %% [markdown]
-# ### 8.4 One week, side by side
+# ### 8.4 Two weeks, side by side
 #
-# Numbers alone hide what the predictions look like. The figure shows one week: the case with the median blend AUC, predicted by a model that did not see that year in training. From the top: the price and the water value above Tokke; SHOP's decisions (dark means on); the LP's plan, with no training; and the blend's predicted probability of running.
+# Numbers alone hide what the predictions look like. The figures show two weeks, each predicted by a model that did not see that year in training: a typical week, the case with the median blend AUC, and a hard week, the case at the 10th percentile (one week in ten is harder). From the top: the price and the water value above Tokke; SHOP's decisions (dark means on); the LP's plan, with no training; and the blend's predicted probability of running.
 
 # %%
-ca = np.array([auc(Y[k].ravel(), B[k].ravel()) if 0 < Y[k].mean() < 1 else np.nan for k in range(N_TR)]); k = int(np.nanargmin(np.abs(ca - np.nanmedian(ca)))); fig, axs = plt.subplots(4, 1, figsize=(11, 8), sharex=True, gridspec_kw=dict(hspace=.28, height_ratios=[1, 2, 2, 2]))
-axs[0].plot(P[k], color=BLUE, label="Price"); wvu = wv[k, ri[UP[UNITS.index("Tokke_G1")]]]; axs[0].axhline(wvu, color=ORANGE, label="Water value above Tokke"); axs[0].set_ylabel("EUR/MWh"); axs[0].set_ylim(0, P[k].max() * 1.45); axs[0].legend(loc="upper right", ncol=2); axs[0].set_title(f"Case starting {c['start'][k]}, blend AUC for this case {ca[k]:.4f}")
-for ax, M, tt in ((axs[1], Y[k], "SHOP's decision (label)"), (axs[2], LPU[k], "LP relaxed commitment, no training"), (axs[3], 1 / (1 + np.exp(-B[k])), "Final blend P(on)")):
-    ax.imshow(M, aspect="auto", cmap="Blues", vmin=0, vmax=1, interpolation="nearest"); ax.grid(False); ax.set_yticks(range(14), UNITS, fontsize=6.5); ax.set_title(tt)
-axs[3].set_xticks(range(0, 168, 24), [f"day {d + 1}" for d in range(7)]); plt.show()
+ca = np.array([auc(Y[k].ravel(), B[k].ravel()) if 0 < Y[k].mean() < 1 else np.nan for k in range(N_TR)])
+def show_week(k, name):
+    fig, axs = plt.subplots(4, 1, figsize=(11, 8), sharex=True, gridspec_kw=dict(hspace=.28, height_ratios=[1, 2, 2, 2]))
+    axs[0].plot(P[k], color=BLUE, label="Price")
+    wvu = wv[k, ri[UP[UNITS.index("Tokke_G1")]]]
+    axs[0].axhline(wvu, color=ORANGE, label="Water value above Tokke")
+    axs[0].set_ylabel("EUR/MWh")
+    axs[0].set_ylim(0, max(P[k].max(), wvu) * 1.45)
+    axs[0].legend(loc="upper right", ncol=2)
+    axs[0].set_title(f"{name}: case starting {c['start'][k]}, AUC for this case: blend {ca[k]:.4f}, LP alone {auc(Y[k].ravel(), LPU[k].ravel()):.4f}")
+    for ax, M, tt in ((axs[1], Y[k], "SHOP's decision (label)"), (axs[2], LPU[k], "LP relaxed commitment, no training"), (axs[3], 1 / (1 + np.exp(-B[k])), "Final blend P(on)")):
+        ax.imshow(M, aspect="auto", cmap="Blues", vmin=0, vmax=1, interpolation="nearest")
+        ax.grid(False)
+        ax.set_yticks(range(14), UNITS, fontsize=6.5)
+        ax.set_title(tt)
+    axs[3].set_xticks(range(0, 168, 24), [f"day {d + 1}" for d in range(7)])
+    plt.show()
+show_week(int(np.nanargmin(np.abs(ca - np.nanmedian(ca)))), "Median week")
+show_week(int(np.nanargmin(np.abs(ca - np.nanquantile(ca, .1)))), "Hard week (10th percentile)")
 
 # %% [markdown]
-# In this week SHOP runs every unit except Byrte and Vesle Kjela all week, and only Vinje G3 switches. The LP gets twelve of the fourteen units right without any training. Its errors are Hogga, which it switches off on days 3-5 and partly off on days 6-7 while SHOP keeps it running, and Vinje G3, which SHOP switches off five times but the LP only two short times. The blend keeps Hogga likely on, with less certainty where the LP has it off, and gives Vinje G3 a lower probability in the hours SHOP has it off, without placing the switches exactly. This matches the interpretation above: the models build on the LP's plan and adjust it, rather than replacing it.
+# In the median week SHOP runs every unit except Byrte and Vesle Kjela all week, and only Vinje G3 switches. The LP gets twelve of the fourteen units right without any training. Its errors are Hogga, which it switches off on days 3-5 and partly off on days 6-7 while SHOP keeps it running, and Vinje G3, which SHOP switches off five times but the LP only two short times. The blend keeps Hogga likely on, with less certainty where the LP has it off, and gives Vinje G3 a lower probability in the hours SHOP has it off, without placing the switches exactly. This matches the interpretation above: the models build on the LP's plan and adjust it, rather than replacing it.
+#
+# The hard week shows where the LP goes wrong and how far the models get. The price stays above the water value above Tokke all week, so from the second day the LP runs all four Tokke units and the first two Vinje units for nearly the rest of the week. SHOP is more selective. It runs Tokke G4 for only 34 of 168 hours, against 153 for the LP, and it stops Vinje G1 and G2 towards the end of the week, which the LP keeps on. The blend corrects part of this. Vinje G3, which the LP runs for 17 hours and SHOP not at all, gets a probability of about 0.1 in those hours. For Tokke G4 the blend ranks SHOP's running hours above the others (mean probability 0.91 against 0.66), but still predicts most of the idle hours as likely on. The case's AUC rises from 0.86 for the LP alone to 0.976. The largest remaining error is Tokke G4's weekly level, which fits the finding in Section 9 that part of the error lies in the weekly level.
 
 # %% [markdown]
 # ## 9. Error analysis
@@ -642,21 +832,61 @@ axs[3].set_xticks(range(0, 168, 24), [f"day {d + 1}" for d in range(7)]); plt.sh
 # Where does the final blend still go wrong? All results use out-of-fold LOYO predictions for 2015-2022, so each case is predicted by a model that did not see its year.
 
 # %%
-fig, ax = plt.subplots(1, 2, figsize=(11.4, 4.6), gridspec_kw=dict(wspace=.3, width_ratios=[1.35, 1])); M = np.array([[auc(Y[ytr == y, g_], B[ytr == y, g_]) for y in YRS] + [auc(Y[:, g_], B[:, g_])] for g_ in range(14)]); heat(ax[0], M, [str(y)[2:] for y in YRS] + ["all"], UNITS, "Blend AUC by unit and year, out of fold", .95, 1., "{:.3f}", cmap="Blues", size=6.5)
-L = [auc(Y[:, g_], LPF[:N_TR, g_]) for g_ in range(14)]; Bl = [auc(Y[:, g_], B[:, g_]) for g_ in range(14)]; X_ = [auc(Y[:, g_], XT[:, g_]) for g_ in range(14)]; N_ = [auc(Y[:, g_], NT[:, g_]) for g_ in range(14)]; yy = np.arange(14)
-ax[1].hlines(yy, L, Bl, color=GRID, lw=1.4); ax[1].scatter(L, yy, s=38, c=YELLOW, label="LP alone", zorder=3); ax[1].scatter(Bl, yy, s=38, c=BLUE, label="Blend", zorder=3); ax[1].set_yticks(yy, UNITS); ax[1].invert_yaxis(); ax[1].grid(axis="y", visible=False); ax[1].legend(loc="lower left"); ax[1].set_title("What learning adds to the LP"); ax[1].set_xlabel("AUC, 2015-22"); plt.show()
+fig, ax = plt.subplots(1, 2, figsize=(11.4, 4.6), gridspec_kw=dict(wspace=.3, width_ratios=[1.35, 1]))
+M = np.array([[auc(Y[ytr == y, g_], B[ytr == y, g_]) for y in YRS] + [auc(Y[:, g_], B[:, g_])] for g_ in range(14)])
+heat(ax[0], M, [str(y)[2:] for y in YRS] + ["all"], UNITS, "Blend AUC by unit and year, out of fold", .95, 1., "{:.3f}", cmap="Blues", size=6.5)
+L = [auc(Y[:, g_], LPF[:N_TR, g_]) for g_ in range(14)]
+Bl = [auc(Y[:, g_], B[:, g_]) for g_ in range(14)]
+X_ = [auc(Y[:, g_], XT[:, g_]) for g_ in range(14)]
+N_ = [auc(Y[:, g_], NT[:, g_]) for g_ in range(14)]
+yy = np.arange(14)
+ax[1].hlines(yy, L, Bl, color=GRID, lw=1.4)
+ax[1].scatter(L, yy, s=38, c=YELLOW, label="LP alone", zorder=3)
+ax[1].scatter(Bl, yy, s=38, c=BLUE, label="Blend", zorder=3)
+ax[1].set_yticks(yy, UNITS)
+ax[1].invert_yaxis()
+ax[1].grid(axis="y", visible=False)
+ax[1].legend(loc="lower left")
+ax[1].set_title("What learning adds to the LP")
+ax[1].set_xlabel("AUC, 2015-22")
+plt.show()
 display(pd.DataFrame({"LP alone": L, "XGBoost": X_, "ST-Net": N_, "Blend": Bl}, index=UNITS).round(4).sort_values("Blend").T)
-wm = P[:N_TR].mean(1); bins = np.quantile(wm, np.linspace(0, 1, 9)); pb = np.digitize(wm, bins[1:-1]); mo = starts[:N_TR].month.values; ex = lambda a, m: auc(Y[m], a[m])
+wm = P[:N_TR].mean(1)
+bins = np.quantile(wm, np.linspace(0, 1, 9))
+pb = np.digitize(wm, bins[1:-1])
+mo = starts[:N_TR].month.values
+ex = lambda a, m: auc(Y[m], a[m])
 fig, ax = plt.subplots(1, 3, figsize=(11.4, 3.2), gridspec_kw=dict(wspace=.3))
-ax[0].plot(range(8), [ex(B, pb == k) for k in range(8)], color=BLUE, label="Blend"); ax[0].plot(range(8), [ex(LPF[:N_TR], pb == k) for k in range(8)], color=YELLOW, label="LP alone"); ax[0].set_xticks(range(8), [f"{bins[k + 1]:.0f}" for k in range(8)], rotation=45); ax[0].set_xlabel("Weekly mean price up to, EUR/MWh"); ax[0].set_ylabel("AUC"); ax[0].set_title("By price octile"); ax[0].legend()
-ax[1].plot(range(1, 13), [ex(B, mo == m) for m in range(1, 13)], color=BLUE, label="Blend"); ax[1].plot(range(1, 13), [ex(LPF[:N_TR], mo == m) for m in range(1, 13)], color=YELLOW, label="LP alone"); ax[1].set_xticks(range(1, 13), ml); ax[1].set_title("By month"); ax[1].legend()
-pb_ = 1 / (1 + np.exp(-B)); bn = np.linspace(0, 1, 21); ix = np.digitize(pb_.ravel(), bn) - 1; mp = [pb_.ravel()[ix == k].mean() for k in range(20)]; my = [Y.ravel()[ix == k].mean() for k in range(20)]; ax[2].plot([0, 1], [0, 1], color=GRID, lw=1); ax[2].plot(mp, my, color=BLUE, marker="o", ms=4); ax[2].set_xlabel("Predicted P(on)"); ax[2].set_ylabel("Observed share on"); ax[2].set_title("Calibration, out of fold"); plt.show()
-print("Blend AUC per year:", {y: round(auc(Y[ytr == y], B[ytr == y]), 5) for y in YRS}); lv = lambda A: np.broadcast_to(A.mean(2, keepdims=True), A.shape); print("AUC if only the weekly level were known, true level:", round(auc(Y, lv(Y)), 4), "| blend's level:", round(auc(Y, lv(B)), 4))
+ax[0].plot(range(8), [ex(B, pb == k) for k in range(8)], color=BLUE, label="Blend")
+ax[0].plot(range(8), [ex(LPF[:N_TR], pb == k) for k in range(8)], color=YELLOW, label="LP alone")
+ax[0].set_xticks(range(8), [f"{bins[k + 1]:.0f}" for k in range(8)], rotation=45)
+ax[0].set_xlabel("Weekly mean price up to, EUR/MWh")
+ax[0].set_ylabel("AUC")
+ax[0].set_title("By price octile")
+ax[0].legend()
+ax[1].plot(range(1, 13), [ex(B, mo == m) for m in range(1, 13)], color=BLUE, label="Blend")
+ax[1].plot(range(1, 13), [ex(LPF[:N_TR], mo == m) for m in range(1, 13)], color=YELLOW, label="LP alone")
+ax[1].set_xticks(range(1, 13), ml)
+ax[1].set_title("By month")
+ax[1].legend()
+pb_ = 1 / (1 + np.exp(-B))
+bn = np.linspace(0, 1, 21)
+ix = np.digitize(pb_.ravel(), bn) - 1
+mp = [pb_.ravel()[ix == k].mean() for k in range(20)]
+my = [Y.ravel()[ix == k].mean() for k in range(20)]
+ax[2].plot([0, 1], [0, 1], color=GRID, lw=1)
+ax[2].plot(mp, my, color=BLUE, marker="o", ms=4)
+ax[2].set_xlabel("Predicted P(on)")
+ax[2].set_ylabel("Observed share on")
+ax[2].set_title("Calibration, out of fold")
+plt.show()
+print("Blend AUC per year:", {y: round(auc(Y[ytr == y], B[ytr == y]), 5) for y in YRS})
+lv = lambda A: np.broadcast_to(A.mean(2, keepdims=True), A.shape)
+print("AUC if only the weekly level were known, true level:", round(auc(Y, lv(Y)), 4), "| blend's level:", round(auc(Y, lv(B)), 4))
 
 # %% [markdown]
 # - **Units.** Learning adds most where the LP is weakest: Vinje G3 rises from 0.930 to 0.976, Hogga from 0.938 to 0.982 and Kjela from 0.964 to 0.991. These are still the three weakest units. Byrte (0.9996) and the Tokke units (about 0.996) are nearly solved. The blend matches or beats both of its members on 13 of 14 units, even though their log-odds correlate at 0.97; on Tokke G3 it is 0.00001 below the network.
-# - **What LP v5 changed.** Against the same blend on LP v4, Kjela gains most (0.9889 to 0.9914), followed by Haukeli and Lio (+0.0006 each). The weakest cell on LP v4, Lio in 2022 (0.964), is now at 0.980, which fits the Lio correction.
-# - **Unit and year.** The weakest cells are now Vinje G3 2020 (0.964), Hogga 2017 (0.968), Vinje G3 2015 (0.970), Haukeli 2022 (0.970) and Vinje G3 2016 (0.971). Vinje G3 is below 0.975 in six of eight years. The weakest year overall is 2018 (0.99075). 2020, by far the hardest year in Phase 1 (E021a 0.97653), is now at 0.99267.
+# - **Unit and year.** The weakest cells are Vinje G3 2020 (0.964), Hogga 2017 (0.968), Vinje G3 2015 (0.970), Haukeli 2022 (0.970) and Vinje G3 2016 (0.971). Vinje G3 is below 0.975 in six of eight years. The weakest year overall is 2018 (0.991). 2020, by far the hardest year in Phase 1 (0.977 for E021a), is now at 0.993.
 # - **Price and month.** Performance is nearly flat across price levels (0.993-0.996). This matters, because the test years have different price levels. April is the weakest month for both the blend and the LP (0.988 and 0.958), followed by July. I did not investigate why.
 # - **Weekly level.** Knowing only each unit's true share of hours on in the week would give AUC 0.981. The blend's own weekly level gives 0.973. Part of the remaining error is therefore in the weekly level, not only in the hour-by-hour timing.
 # - **Calibration.** Predicted probabilities are close to the observed frequencies, but slightly too confident at low probabilities (predicted about 0.07, observed 0.12; predicted 0.12, observed 0.18). AUC depends only on the ranking, so I did not recalibrate.
@@ -671,11 +901,27 @@ print("Blend AUC per year:", {y: round(auc(Y[ytr == y], B[ytr == y]), 5) for y i
 # Here XGBoost is trained on one kind of period and tested on another, for example early against late years, or low-price against high-price weeks. Each holdout is run without the LP features, with them, and with them but without absolute prices; the last column is the LP alone. These runs used LP v4 and were not repeated on v5. One caveat: I designed the LP while seeing labels from all these years.
 
 # %%
-rr = pd.read_csv("artifacts/robust_regime.csv").set_index("holdout"); rr.columns = ["n train", "n val", "No LP", "LP with prices", "LP, no prices", "LP alone (no training)"]; display(rr)
-rc = json.load(open("artifacts/robust_curves.json")); fig, ax = plt.subplots(1, 2, figsize=(11, 3.3), gridspec_kw=dict(wspace=.28)); rs = ["50", "100", "200", "300", "500", "800", "1200"]
-for (y, d), col in zip(rc["rounds"].items(), (BLUE, ORANGE, AQUA, YELLOW)): ax[0].plot([int(r) for r in rs], [d[r][1] for r in rs], color=col, label=f"{y}")
-ax[0].axvline(300, color=MUTED, lw=.8); ax[0].text(320, ax[0].get_ylim()[0] + .0004, "Used: 300", fontsize=8, color=MUTED); ax[0].set_xscale("log"); ax[0].set_xlabel("Rounds"); ax[0].set_ylabel("Validation AUC"); ax[0].set_title("Forward validation by rounds"); ax[0].legend(ncol=2)
-sz = rc["size"]; ax[1].plot([int(k) for k in sz], list(sz.values()), color=BLUE, marker="o", ms=5); ax[1].set_xlabel("Training years"); ax[1].set_ylabel("AUC on 2022"); ax[1].set_title("Five or seven years beat one to three"); plt.show()
+rr = pd.read_csv("artifacts/robust_regime.csv").set_index("holdout")
+rr.columns = ["n train", "n val", "No LP", "LP with prices", "LP, no prices", "LP alone (no training)"]
+display(rr)
+rc = json.load(open("artifacts/robust_curves.json"))
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.3), gridspec_kw=dict(wspace=.28))
+rs = ["50", "100", "200", "300", "500", "800", "1200"]
+for (y, d), col in zip(rc["rounds"].items(), (BLUE, ORANGE, AQUA, YELLOW)):
+    ax[0].plot([int(r) for r in rs], [d[r][1] for r in rs], color=col, label=f"{y}")
+ax[0].axvline(300, color=MUTED, lw=.8)
+ax[0].text(320, ax[0].get_ylim()[0] + .0004, "Used: 300", fontsize=8, color=MUTED)
+ax[0].set_xscale("log")
+ax[0].set_xlabel("Rounds")
+ax[0].set_ylabel("Validation AUC")
+ax[0].set_title("Forward validation by rounds")
+ax[0].legend(ncol=2)
+sz = rc["size"]
+ax[1].plot([int(k) for k in sz], list(sz.values()), color=BLUE, marker="o", ms=5)
+ax[1].set_xlabel("Training years")
+ax[1].set_ylabel("AUC on 2022")
+ax[1].set_title("Five or seven years beat one to three")
+plt.show()
 
 # %% [markdown]
 # - **The LP makes the models robust to new conditions.** Without LP features the holdouts score 0.91-0.93; with them about 0.99. This gap is larger than any difference between model types in Section 6, so for robustness the features matter more than the choice of model.
@@ -687,22 +933,27 @@ sz = rc["size"]; ax[1].plot([int(k) for k in sz], list(sz.values()), color=BLUE,
 # Here the inputs for half of 2022's cases are deliberately changed, **the LP is solved again** on the changed inputs, and models trained before 2022 make the predictions. The labels stay the same, but SHOP's real decision could change under the new inputs, so these numbers show sensitivity, not true scores. The changes are: scaling prices and water values together (as if the whole market's price level changed), adding noise to prices, and pushing the cheapest 10 % of hours below zero to imitate the negative prices in the test years.
 
 # %%
-sf, sn = json.load(open("artifacts/stress_final.json")), json.load(open("artifacts/stress_noabs.json")); kk = ["scale_0.5", "scale_2", "scale_4", "price_noise", "negative_cheapest"]
+sf, sn = json.load(open("artifacts/stress_final.json")), json.load(open("artifacts/stress_noabs.json"))
+kk = ["scale_0.5", "scale_2", "scale_4", "price_noise", "negative_cheapest"]
 display(pd.DataFrame({"XGBoost": [sf[k]["xgb"] for k in kk], "ST-Net, notebook 1": [sf[k]["net"] for k in kk], "ST-Net, notebook 2": [sn[k]["net"] for k in kk], "Blend, notebook 1": [sf[k]["blend"] for k in kk], "Blend, notebook 2": [sn[k]["blend"] for k in kk], "LP schedule changed": [sf[k]["lp_u_change"] for k in kk]}, index=["Price & water value x0.5", "Price & water value x2", "Price & water value x4", "Noise on price", "Cheapest 10 % of hours pushed below zero"]).round(5))
 print("Unperturbed blend on this half of 2022: notebook 1", round(sf["base"]["blend"], 5), "| notebook 2", round(sn["base"]["blend"], 5))
 print("Mean P(on) in the hours pushed negative: before", round(sf["negative_cheapest"]["p_on_before"], 3), "after", round(sf["negative_cheapest"]["p_on_after"], 3), "| LP:", round(sf["negative_cheapest"]["lp_on_before"], 3), "to", round(sf["negative_cheapest"]["lp_on_after"], 3))
-s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.reshape(725, 14, 168); P2 = P[N_TR:]; neg = np.broadcast_to(P2[:, None] < 0, T1.shape); print("\nOn the actual test set (no labels). Mean P(on) in negative-price hours:", round(T1[neg].mean(), 3), "| all other hours:", round(T1[~neg].mean(), 3), "| LP power fraction in negative hours:", round(LPF[N_TR:][neg].mean(), 3))
+s1 = pd.read_csv("artifacts/submission_1.csv")
+T1 = s1.iloc[:, 1:].values.reshape(725, 14, 168)
+P2 = P[N_TR:]
+neg = np.broadcast_to(P2[:, None] < 0, T1.shape)
+print("\nOn the actual test set (no labels). Mean P(on) in negative-price hours:", round(T1[neg].mean(), 3), "| all other hours:", round(T1[~neg].mean(), 3), "| LP power fraction in negative hours:", round(LPF[N_TR:][neg].mean(), 3))
 
 # %% [markdown]
 # The table shows the change in AUC against the unperturbed inputs, and the share of the LP's decisions that changed.
 #
 # - **Scaling** prices and water values together barely changes the result up to x2, because the LP's plan hardly changes (0.8-1.0 % of its decisions). At x4, 1.7 % of the LP's decisions change and the blend loses 0.003.
-# - **Negative prices are the largest unknown.** The blend loses 0.0055 AUC (0.0072 on LP v4). The best model without the LP (E021a) lost 0.0229 under the same change, on different validation data, so the comparison is only indicative. In the hours pushed below zero, the predicted probability of running falls from 0.14 to 0.01. On the real test set, the mean predicted probability is 0.14 in negative-price hours and 0.48 in other hours. The direction is sensible, since producing at a negative price costs money, but how strongly SHOP reacts cannot be checked without labels.
+# - **Negative prices are the largest unknown.** The blend loses 0.0055 AUC. The best model without the LP (E021a) lost 0.0229 under the same change, on different validation data, so the comparison is only indicative. In the hours pushed below zero, the predicted probability of running falls from 0.14 to 0.01. On the real test set, the mean predicted probability is 0.14 in negative-price hours and 0.48 in other hours. The direction is sensible, since producing at a negative price costs money, but how strongly SHOP reacts cannot be checked without labels.
 # - **Price noise** costs 0.0069, but it is the least relevant test, because SHOP and the features always see the same price.
 #
-# **Why notebook 2 exists.** Notebook 1 bets that absolute price levels help the network (R6, R21). If the test years' price levels mislead it, that bet loses. Notebook 2 removes these columns from the network too, so no part of the model reads the price level directly. Under the stress tests it holds up somewhat better: the blend loses 0.00260 instead of 0.00287 when prices are scaled x4, and 0.00512 instead of 0.00552 with negative prices. It costs nothing in validation on LP v5 (LOYO 0.99430 for both, forward 0.99408 against 0.99404). Both notebooks share the LP, so this hedge does not protect against the LP itself failing. I considered a model without the LP (E026) as the hedge instead, but rejected it: its LOYO is about 0.012 lower, and its predecessor E013 lost 0.029 with negative prices (indicative).
+# **Why notebook 2 exists.** Notebook 1 bets that absolute price levels help the network, as they did on LP v4 (R6, R21). If the test years' price levels mislead it, that bet loses. Notebook 2 removes these columns from the network too, so no part of the model reads the price level directly. Under the stress tests it holds up somewhat better: the blend loses 0.0026 instead of 0.0029 when prices are scaled x4, and 0.0051 instead of 0.0055 with negative prices. It costs nothing in validation (LOYO 0.9943 for both, forward 0.99408 against 0.99404). Both notebooks share the LP, so this hedge does not protect against the LP itself failing. I considered a model without the LP (E026) as the hedge instead, but rejected it: its LOYO is about 0.012 lower, and its predecessor E013 lost 0.029 with negative prices (indicative).
 #
-# The public leaderboard agrees that the hedge costs almost nothing: 0.99649 for notebook 2 against 0.99651 for notebook 1 on LP v5, and 0.99635 against 0.99638 on LP v4.
+# The public leaderboard agrees that the hedge costs almost nothing: 0.99649 for notebook 2 against 0.99651 for notebook 1.
 
 # %% [markdown]
 # ## 11. Reproducibility
@@ -711,7 +962,7 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 #
 # Both notebooks contain all their code, start from the raw data, run offline and use no external data. LP solutions are saved in `work/`, so an interrupted run can resume. XGBoost and ST-Net each fall back to the CPU if the GPU fails.
 #
-# No GPU was available in the last two days before the deadline, so the submitted files were made without one. The table gives times in minutes. Each run started from an empty directory, with 4 cores and a 32 GB memory limit enforced by Slurm.
+# The submitted files were made without a GPU. The table gives times in minutes. Each run started from an empty directory, with 4 cores and a 32 GB memory limit enforced by Slurm.
 #
 # | Run | Hardware | Total | LP | XGBoost | ST-Net | Peak RAM (GiB) | Against submitted file |
 # |---|---|---|---|---|---|---|---|
@@ -720,11 +971,11 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # | Notebook 1, second run | No GPU, Xeon 6730P, another node | 206 | 107 | 4.9 | 94 | 17.7 | Byte-identical |
 # | Notebook 2, second run | No GPU, Xeon 6730P, same node | 224 | 116 | 3.9 | 104 | 17.7 | Byte-identical |
 #
-# Before LP v5, the same notebooks on LP v4 ran in 40 minutes on an H100 (LP 37), in 166 minutes without a GPU on a Xeon Gold 6348, and in 277-307 minutes on a node with a Tesla P100, all from an empty directory with the same limits.
+# With the previous LP (v4), the same notebooks also ran on other hardware: 40 minutes on an H100 GPU, 166 minutes without a GPU on a Xeon Gold 6348, and 277-307 minutes on a node with a Tesla P100, all from an empty directory with the same limits.
 #
 # - **The LP gives the same result everywhere.** Each LP solve has a time limit, and a limit that is reached would make the result depend on the computer's speed, so I checked this directly: a second run of all 3647 cases on a different machine (Xeon Gold 6132) gave bit-identical schedules, shadow prices and flows. The LP solutions from the notebooks' own copy of the code, saved in the two second runs above, are bit-identical to them too, for all three solves of every case. No case reached a limit: the slowest of Lio's integer steps took 2 minutes against a limit of 10.
 # - **Same hardware gives the same file.** Each notebook was run a second time on the same CPU model, notebook 1 on another node, and both gave a byte-identical submission file. Training on other hardware changes the predictions slightly: on LP v4, files from a GPU and from a CPU had rank correlation 0.999 with each other.
-# - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU: the slowest run took 3 h 47 min and used 17.7 GiB. The LP stage takes about 3 times as long as on LP v4 (109 against 37 minutes) because of Lio's integer step.
+# - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU: the slowest run took 3 h 47 min and used 17.7 GiB. The LP takes about half of the time; per solve it is 3.3-4.5 times slower than LP v4 on the same machine, mainly because of Lio's integer step.
 # - **GPU.** XGBoost 3.4.1 does not support the Tesla P100 (`not compiled for SM 60`) or the V100 (SM 70), so it falls back to the CPU there. On LP v4 I tested the ST-Net fallback by limiting GPU memory until training ran out of it.
 #
 # Versions are in `requirements.txt`: Python 3.12, PyTorch 2.6.0 with CUDA 12.4, XGBoost 3.4.1, SciPy 1.18.1 with HiGHS.
@@ -732,14 +983,14 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # %% [markdown]
 # ## 12. Limitations
 #
-# - **No untouched holdout.** I chose the LP's structure, for example telescoping water values, by scoring versions against labels from all training years. The same holds for LP v5: I found its two corrections two days before the deadline by comparing the LP's plan with the labels unit by unit, and the choice of Lio as the only unit with whole on/off decisions came from that comparison. The LOYO and forward scores for models with the LP are therefore somewhat optimistic. The public leaderboard is the only fully independent check, and I looked at it several times, which weakens it a little too. For LP v5 it is clean: the decision was fixed before the new files' public scores were known.
+# - **No untouched holdout.** I chose the LP's structure, for example telescoping water values, by scoring versions against labels from all training years. The same holds for the two corrections in LP v5, which I found by comparing the LP's plan with the labels unit by unit; the choice of Lio as the only unit with whole on/off decisions came from that comparison. The LOYO and forward scores for models with the LP are therefore somewhat optimistic. The public leaderboard is the only fully independent check, and I looked at it several times, which weakens it a little too. For LP v5 it is clean: the decision was fixed before the new files' public scores were known.
 # - **Negative prices** are 2.2 % of test hours (1.99 % in 2023, 2.35 % in 2024) but almost absent from training, so no model has learned how SHOP reacts to them. How these hours are split between the public and private test sets is unknown, so the private score may react differently from the public one.
 # - **Weakest units:** Vinje G3, Hogga and Kjela. Start costs and whole on/off decisions at small margins are a likely cause, but I did not establish this.
-# - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1 for every unit except Lio. Vinje G3 is a known gap: in a quarter of the hours where the LP runs Vinje G3, SHOP runs only two Vinje units (25 % on both LP v4 and v5), and I could not find the cause. The models can only correct these simplifications where the training years show how.
+# - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1 for every unit except Lio. Vinje G3 is a known gap: in a quarter of the hours where the LP runs Vinje G3, SHOP runs only two Vinje units, and I could not find the cause. The models can only correct these simplifications where the training years show how.
 # - **Blend weight** not chosen nested for the final pair (Section 7).
 # - **Interpretation.** SHAP covers only the trees, shuffling breaks physical consistency, and correlated features share credit.
 # - **Runtime.** The slowest measured run of the final notebooks took 3 h 47 min, a factor of 3.2 below 12 hours. All runs used server CPUs, and a laptop can be slower. On Windows, which cannot fork processes, the notebooks solve the LP on one core instead of four. Scaled from the runs above, that is about 7 hours for the LP and 9-10 hours in total. This is an estimate; I did not test it.
-# - **Training hardware.** The final comparison of LP v5 against v4 and the submitted files were trained on CPUs, because no GPU was available in the last two days. The CPU runs on LP v4 match the earlier GPU runs closely, so this should not change the conclusions.
+# - **Training hardware.** The submitted files and the comparison of LP v5 against v4 were trained on CPUs, since no GPU was available at the end of the project. CPU and GPU runs of the same models agree within 0.00002 in LOYO (Section 6.2), so this should not change the conclusions.
 
 # %% [markdown]
 # ## 13. Conclusion
@@ -755,3 +1006,23 @@ s1 = pd.read_csv("artifacts/submission_1.csv"); T1 = s1.iloc[:, 1:].values.resha
 # The main open risk is the negative prices in the test years, which no training year shows. The models react in a sensible direction, and notebook 2 reduces the dependence on absolute price levels, but how SHOP itself reacts will only show on the private leaderboard.
 #
 # **Tools:** Claude Code (an AI coding assistant) was used for code, analyses and drafting this report. Numbers come from logged runs.
+
+# %% [markdown]
+# ## Appendix: experiment numbers
+#
+# The text refers to runs in my experiment log by number. E numbers (Phase 1) are explained in the table in Section 6.1, and L, C, N, X and P runs (Phase 2) in the table in Section 6.2. The R numbers below are the hypotheses from the last rounds that the text cites. Each was written in the log before it ran. The full log, with every hypothesis and result, is `experiments/ledger.md` in the project repository: https://github.com/MartinNordli/Unit-Commitment-Problem/blob/main/experiments/ledger.md
+#
+# | Number | What it tested | Result |
+# |---|---|---|
+# | R1 | Seed noise: XGBoost with 5 seeds | Standard deviation 0.00003 in LOYO, 0.00006-0.00009 forward. The gate's noise level was set to 0.0001 |
+# | R2 | Label control: labels shuffled between whole cases, on LP v4 | AUC 0.589, about what base rates give. No leakage visible |
+# | R3 | Drop the minimum-flow columns `mf_*` (trees) | LOYO -0.00001, forward -0.00007. Inside noise |
+# | R6 | Keep the absolute price columns | Trees: inside noise. Network: forward +0.0007 |
+# | R10 | ST-Net epochs (12, 16, 24), forward validation | 24 epochs best with absolute prices. Settled by R20 |
+# | R13 | XGBoost with learning rate 0.04 and 800 rounds | LOYO +0.00008, forward +0.00005. Inside noise, rejected |
+# | R14 | ST-Net with three other seeds | Three-seed ensembles differ by up to 0.00035. Six seeds add nothing in the blend |
+# | R15 | ST-Net with `d` = 96 | Forward 0.99132 against 0.99195, better in 1 of 4 years. Rejected |
+# | R16 | Blends of all model families, weights chosen nested in forward validation | XGBoost + network 0.99329; adding CatBoost 0.99334, below noise. Weights flat between 0.6 and 0.8 |
+# | R19 | Add `ls_*` to ST-Net, keeping `mf_*` and `lps_*` | LOYO +0.00006, 4 of 8 years. Fails the gate |
+# | R20 | 12 against 24 epochs on the same seeds | 24 epochs better on both seed sets, in LOYO and forward |
+# | R21 | ST-Net with `base,lp,ls` only | LOYO +0.00064 (7 of 8 years), forward +0.00083 (4 of 4). Accepted |
