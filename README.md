@@ -65,7 +65,7 @@ Learning adds most where the LP is weakest:
 
 ## Reproducing
 
-The competition data is not included. Place the raw files next to a short notebook (they are found by name in any subfolder) or set `UC_DATA_DIR`, install `submission/requirements.txt`, and run the notebook. Measured from an empty directory with 4 cores, a 32 GB limit and no GPU (Xeon 6730P): 3.4-3.8 hours and 17.7 GiB RAM, about half of it in the LP. A second run on the same CPU model gave a byte-identical file.
+The competition data is not included. Place the raw files next to a short notebook (they are found by name in any subfolder) or set `UC_DATA_DIR`, install `submission/requirements.txt`, and run the notebook. Measured from an empty directory with 4 cores, a 32 GB limit and no GPU: 3.4-3.8 hours on a Xeon 6730P and 7.8 hours on a Xeon E5-2630 v4 from 2016, both under the 12-hour limit, with 17.7 GiB RAM at most. About half of the time is the LP. A second run on the same CPU model gave a byte-identical file; on the older CPU the file differs slightly (rank correlation 0.99997).
 
 ## Limitations
 

@@ -970,12 +970,16 @@ print("\nOn the actual test set (no labels). Mean P(on) in negative-price hours:
 # | Notebook 2 | No GPU, Xeon 6730P | 224 | 108 | 3.6 | 112 | 17.7 | Is the submitted file |
 # | Notebook 1, second run | No GPU, Xeon 6730P, another node | 206 | 107 | 4.9 | 94 | 17.7 | Byte-identical |
 # | Notebook 2, second run | No GPU, Xeon 6730P, same node | 224 | 116 | 3.9 | 104 | 17.7 | Byte-identical |
+# | Notebook 1, older CPU | No GPU, Xeon E5-2630 v4 (2016) | 464 | 233 | 7.3 | 223 | 17.7 | Rank correlation 0.99997 |
+# | Notebook 2, older CPU | No GPU, Xeon E5-2630 v4 (2016) | 465 | 234 | 7.3 | 223 | 17.7 | Rank correlation 0.99997 |
+#
+# The last two rows test slower hardware. The Xeon E5-2630 v4 is the oldest CPU type in the cluster, and both runs shared one node at the same time.
 #
 # With the previous LP (v4), the same notebooks also ran on other hardware: 40 minutes on an H100 GPU, 166 minutes without a GPU on a Xeon Gold 6348, and 277-307 minutes on a node with a Tesla P100, all from an empty directory with the same limits.
 #
 # - **The LP gives the same result everywhere.** Each LP solve has a time limit, and a limit that is reached would make the result depend on the computer's speed, so I checked this directly: a second run of all 3647 cases on a different machine (Xeon Gold 6132) gave bit-identical schedules, shadow prices and flows. The LP solutions from the notebooks' own copy of the code, saved in the two second runs above, are bit-identical to them too, for all three solves of every case. No case reached a limit: the slowest of Lio's integer steps took 2 minutes against a limit of 10.
-# - **Same hardware gives the same file.** Each notebook was run a second time on the same CPU model, notebook 1 on another node, and both gave a byte-identical submission file. Training on other hardware changes the predictions slightly: on LP v4, files from a GPU and from a CPU had rank correlation 0.999 with each other.
-# - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU: the slowest run took 3 h 47 min and used 17.7 GiB. The LP takes about half of the time; per solve it is 3.3-4.5 times slower than LP v4 on the same machine, mainly because of Lio's integer step.
+# - **Same hardware gives the same file.** Each notebook was run a second time on the same CPU model, notebook 1 on another node, and both gave a byte-identical submission file. Other hardware changes the predictions slightly. On the Xeon E5-2630 v4 the files have rank correlation 0.99997 with the submitted ones, and the largest difference is 0.18 in log-odds. Almost all of it comes from XGBoost, whose trees depend slightly on the CPU; the network differs by at most 0.0001. On LP v4, files from a GPU and from a CPU had rank correlation 0.999.
+# - **12 hours, 4 CPU cores, 32 GB.** Both notebooks meet the limits without a GPU. On the Xeon 6730P the slowest run took 3 h 47 min. On the Xeon E5-2630 v4 from 2016 it took 7 h 45 min, a factor of 1.5 below 12 hours. Every run used 17.7 GiB of memory at most. The LP takes about half of the time; per solve it is 3.3-4.5 times slower than LP v4 on the same machine, mainly because of Lio's integer step.
 # - **GPU.** XGBoost 3.4.1 does not support the Tesla P100 (`not compiled for SM 60`) or the V100 (SM 70), so it falls back to the CPU there. On LP v4 I tested the ST-Net fallback by limiting GPU memory until training ran out of it.
 #
 # Versions are in `requirements.txt`: Python 3.12, PyTorch 2.6.0 with CUDA 12.4, XGBoost 3.4.1, SciPy 1.18.1 with HiGHS.
@@ -989,7 +993,7 @@ print("\nOn the actual test set (no labels). Mean P(on) in negative-price hours:
 # - **LP simplifications.** Head is fixed within a week, efficiency is concave, and on/off is relaxed to values between 0 and 1 for every unit except Lio. Vinje G3 is a known gap: in a quarter of the hours where the LP runs Vinje G3, SHOP runs only two Vinje units, and I could not find the cause. The models can only correct these simplifications where the training years show how.
 # - **Blend weight** not chosen nested for the final pair (Section 7).
 # - **Interpretation.** SHAP covers only the trees, shuffling breaks physical consistency, and correlated features share credit.
-# - **Runtime.** The slowest measured run of the final notebooks took 3 h 47 min, a factor of 3.2 below 12 hours. All runs used server CPUs, and a laptop can be slower. On Windows, which cannot fork processes, the notebooks solve the LP on one core instead of four. Scaled from the runs above, that is about 7 hours for the LP and 9-10 hours in total. This is an estimate; I did not test it.
+# - **Runtime.** The slowest measured run of the final notebooks took 7 h 45 min, on a Xeon E5-2630 v4 from 2016, a factor of 1.5 below 12 hours. All runs used server CPUs, and I did not test a laptop. A laptop that is clearly slower per core than that CPU, or that slows down under hours of full load, would come closer to the limit. On Windows, which cannot fork processes, the notebooks solve the LP on one core instead of four. Scaled from the runs above, that is about 7 hours for the LP and 9-10 hours in total. This is an estimate; I did not test it.
 # - **Training hardware.** The submitted files and the comparison of LP v5 against v4 were trained on CPUs, since no GPU was available at the end of the project. CPU and GPU runs of the same models agree within 0.00002 in LOYO (Section 6.2), so this should not change the conclusions.
 
 # %% [markdown]
